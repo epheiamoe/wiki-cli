@@ -5,7 +5,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { execSync } from 'node:child_process';
 import { marked } from 'marked';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
-import { readTextFile } from '../utils/file.js';
+import { stripCodeFence } from '../ai/llm-client.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 
@@ -33,17 +33,8 @@ export async function browseCommand(): Promise<void> {
   const wikiPath = join(wikiDir, latest);
   logInfo(`Browsing Wiki: ${latest}`);
 
-  const indexMdPath = join(wikiPath, 'index.md');
-  let sidebarItems: { title: string; slug: string; level: string }[] = [];
-  let firstPage: string | null = null;
-
-  if (existsSync(indexMdPath)) {
-    const indexContent = await readFile(indexMdPath, 'utf-8');
-    sidebarItems = parseIndex(indexContent);
-    if (sidebarItems.length > 0) {
-      firstPage = join(wikiPath, `${sidebarItems[0].slug}.md`);
-    }
-  }
+  const sidebarItems = await loadSidebar(wikiPath);
+  const firstPage = sidebarItems.length > 0 ? join(wikiPath, `${sidebarItems[0].slug}.md`) : null;
 
   const port = await findFreePort(3000);
 
@@ -139,48 +130,76 @@ export async function browseCommand(): Promise<void> {
   });
 }
 
-function sanitizePath(rawPath: string): string | null {
-  const normalized = normalize(rawPath).replace(/^(\.\.(\/|\\))+/g, '');
-  const resolved = resolve(PROJECT_ROOT, normalized);
-  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) {
-    return null;
+interface SidebarItem {
+  title: string;
+  slug: string;
+  level: string;
+}
+
+async function loadSidebar(wikiPath: string): Promise<SidebarItem[]> {
+  // Try index.json first (new format)
+  const jsonPath = join(wikiPath, 'index.json');
+  if (existsSync(jsonPath)) {
+    try {
+      const content = await readFile(jsonPath, 'utf-8');
+      return parseIndexJson(content);
+    } catch {
+      // fall through to XML fallback
+    }
   }
-  return normalized;
+
+  // Fallback: try index.md with XML format (legacy)
+  const mdPath = join(wikiPath, 'index.md');
+  if (existsSync(mdPath)) {
+    try {
+      const content = await readFile(mdPath, 'utf-8');
+      return parseIndexXml(content);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Last resort: scan .md files
+  return [];
 }
 
-function extToLang(ext: string): string {
-  const map: Record<string, string> = {
-    '.ts': 'typescript',
-    '.js': 'javascript',
-    '.json': 'json',
-    '.md': 'markdown',
-    '.yml': 'yaml',
-    '.yaml': 'yaml',
-    '.html': 'html',
-    '.css': 'css',
-    '.sh': 'bash',
-    '.bash': 'bash',
-  };
-  return map[ext] || 'plaintext';
+function parseIndexJson(content: string): SidebarItem[] {
+  const cleaned = stripCodeFence(content);
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return [];
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return [];
+  }
+
+  if (!parsed.sections || !Array.isArray(parsed.sections)) return [];
+
+  const items: SidebarItem[] = [];
+
+  for (const section of parsed.sections) {
+    if (!section.topics || !Array.isArray(section.topics)) continue;
+
+    for (const topic of section.topics) {
+      if (topic.type === 'group') {
+        items.push({ title: topic.title, slug: '', level: 'group' });
+      } else if (topic.title) {
+        items.push({
+          title: topic.title,
+          slug: slugify(topic.title),
+          level: topic.level || '中级',
+        });
+      }
+    }
+  }
+
+  return items;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function fixContentReferences(html: string): string {
-  return html.replace(
-    /\[来源：([^\]]+)\]/g,
-    '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>'
-  );
-}
-
-function parseIndex(content: string): { title: string; slug: string; level: string }[] {
-  const items: { title: string; slug: string; level: string }[] = [];
+function parseIndexXml(content: string): SidebarItem[] {
+  const items: SidebarItem[] = [];
   const lines = content.split('\n');
   let inSection = false;
 
@@ -198,12 +217,9 @@ function parseIndex(content: string): { title: string; slug: string; level: stri
     }
     if (!inSection) continue;
 
-    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)">([^<]*)<\/topic>/);
+    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"[^>]*>([^<]*)<\/topic>/);
     if (topicMatch) {
-      const level = topicMatch[1];
-      const title = topicMatch[2];
-      const slug = slugify(title);
-      items.push({ title, slug, level });
+      items.push({ title: topicMatch[2], slug: slugify(topicMatch[2]), level: topicMatch[1] });
       continue;
     }
 
@@ -216,15 +232,40 @@ function parseIndex(content: string): { title: string; slug: string; level: stri
   return items;
 }
 
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fff]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    || 'untitled';
+function sanitizePath(rawPath: string): string | null {
+  const normalized = normalize(rawPath).replace(/^(\.\.(\/|\\))+/g, '');
+  const resolved = resolve(PROJECT_ROOT, normalized);
+  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) {
+    return null;
+  }
+  return normalized;
 }
 
-function buildSidebarHtml(items: { title: string; slug: string; level: string }[]): string {
+function extToLang(ext: string): string {
+  const map: Record<string, string> = {
+    '.ts': 'typescript', '.js': 'javascript', '.json': 'json',
+    '.md': 'markdown', '.yml': 'yaml', '.yaml': 'yaml',
+    '.html': 'html', '.css': 'css', '.sh': 'bash', '.bash': 'bash',
+  };
+  return map[ext] || 'plaintext';
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function fixContentReferences(html: string): string {
+  return html.replace(
+    /\[来源：([^\]]+)\]/g,
+    '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>'
+  );
+}
+
+function slugify(title: string): string {
+  return title.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+}
+
+function buildSidebarHtml(items: SidebarItem[]): string {
   const parts = items.map(item => {
     if (item.level === 'group') {
       return `<li class="nav-group">${item.title}</li>`;
@@ -252,7 +293,7 @@ async function findFreePort(preferred: number): Promise<number> {
   });
 }
 
-async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: { title: string; slug: string; level: string }[], firstPage: string | null): Promise<void> {
+async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: SidebarItem[], firstPage: string | null): Promise<void> {
   let firstContent = '';
   if (firstPage && existsSync(firstPage)) {
     const md = await readFile(firstPage, 'utf-8');

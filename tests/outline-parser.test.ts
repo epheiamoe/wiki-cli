@@ -1,83 +1,65 @@
 import { describe, it, expect } from 'vitest';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { stripCodeFence } from '../src/ai/llm-client.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+function parseOutlineJson(text: string): { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] {
+  let cleaned = stripCodeFence(text);
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return [];
 
-// Replicate parseOutlineTopics logic for testing
-function parseOutlineTopics(xmlContent: string): { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] {
-  const topics: { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] = [];
-  let currentSection = '';
-  let pendingSection = false;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.sections || !Array.isArray(parsed.sections)) return [];
 
-  const lines = xmlContent.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+    const topics: any[] = [];
 
-    const sectionMatch = trimmed.match(/^<section>\s*([^<]*)/);
-    if (sectionMatch) {
-      const name = sectionMatch[1].trim();
-      if (name) {
-        currentSection = name;
-        pendingSection = false;
-      } else {
-        pendingSection = true;
+    for (const section of parsed.sections) {
+      const sectionName = section.name || '';
+      if (!section.topics || !Array.isArray(section.topics)) continue;
+
+      for (const item of section.topics) {
+        if (item.type === 'group') {
+          topics.push({ title: item.title, level: '', section: sectionName, isGroup: true });
+        } else {
+          topics.push({ title: item.title, level: item.level || '中级', section: sectionName, brief: item.brief || '' });
+        }
       }
-      continue;
     }
 
-    if (pendingSection) {
-      currentSection = trimmed;
-      pendingSection = false;
-      continue;
-    }
-
-    if (trimmed.startsWith('</section>')) {
-      currentSection = '';
-      pendingSection = false;
-      continue;
-    }
-
-    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"(?:\s+brief="([^"]*)")?>([^<]*)<\/topic>/);
-    if (topicMatch) {
-      topics.push({ title: topicMatch[3].trim(), level: topicMatch[1].trim(), brief: topicMatch[2]?.trim() || '', section: currentSection });
-      continue;
-    }
-
-    const groupMatch = trimmed.match(/<group>([^<]*)<\/group>/);
-    if (groupMatch) {
-      topics.push({ title: groupMatch[1].trim(), level: '', section: currentSection, isGroup: true });
-    }
+    return topics;
+  } catch {
+    return [];
   }
-
-  return topics;
 }
 
-describe('parseOutlineTopics', () => {
-  const sampleXml = `<section>
-入门指南
-<topic level="初学">概览</topic>
-<topic level="初学">快速开始</topic>
-</section>
+describe('parseOutlineJson', () => {
+  const sampleJson = `{
+    "sections": [
+      {
+        "name": "入门指南",
+        "topics": [
+          { "level": "初学", "title": "概览", "brief": "项目定位与核心功能" },
+          { "level": "初学", "title": "快速开始", "brief": "5 分钟体验" }
+        ]
+      },
+      {
+        "name": "深入探索",
+        "topics": [
+          { "type": "group", "title": "核心模块" },
+          { "level": "高级", "title": "架构设计", "brief": "分层架构解析" }
+        ]
+      }
+    ]
+  }`;
 
-<section>
-深入探索
-<group>核心模块</group>
-<topic level="高级">架构设计</topic>
-</section>`;
-
-  it('should parse sections when name is on next line', () => {
-    const topics = parseOutlineTopics(sampleXml);
+  it('should parse sections and topics from JSON', () => {
+    const topics = parseOutlineJson(sampleJson);
     expect(topics.length).toBe(4);
 
     const introTopics = topics.filter(t => t.section === '入门指南');
     expect(introTopics.length).toBe(2);
     expect(introTopics[0].title).toBe('概览');
     expect(introTopics[0].level).toBe('初学');
+    expect(introTopics[0].brief).toBe('项目定位与核心功能');
 
     const deepTopics = topics.filter(t => t.section === '深入探索');
     expect(deepTopics.length).toBe(2);
@@ -86,51 +68,48 @@ describe('parseOutlineTopics', () => {
     expect(deepTopics[1].title).toBe('架构设计');
   });
 
-  it('should handle section name on same line as tag', () => {
-    const xml = `<section>入门指南
-<topic level="初学">概览</topic>
-</section>`;
-    const topics = parseOutlineTopics(xml);
-    expect(topics.length).toBe(1);
-    expect(topics[0].section).toBe('入门指南');
+  it('should handle JSON wrapped in code fence', () => {
+    const fenced = '```json\n' + sampleJson + '\n```';
+    const topics = parseOutlineJson(fenced);
+    expect(topics.length).toBe(4);
   });
 
-  it('should return empty array for content without sections', () => {
-    const topics = parseOutlineTopics('no sections here');
-    expect(topics.length).toBe(0);
+  it('should handle JSON with extra text before/after', () => {
+    const extra = 'Here is the result:\n\n' + sampleJson + '\n\nEnd.';
+    const topics = parseOutlineJson(extra);
+    expect(topics.length).toBe(4);
   });
 
-  it('should parse brief attribute from topics', () => {
-    const xml = `<section>
-入门指南
-<topic level="初学" brief="核心功能概述，阅读 cli.ts">概览</topic>
-</section>`;
-    const topics = parseOutlineTopics(xml);
-    expect(topics.length).toBe(1);
-    expect(topics[0].brief).toBe('核心功能概述，阅读 cli.ts');
-    expect(topics[0].title).toBe('概览');
+  it('should return empty array for invalid input', () => {
+    expect(parseOutlineJson('not json').length).toBe(0);
+    expect(parseOutlineJson('').length).toBe(0);
+    expect(parseOutlineJson('{"wrong": "structure"}').length).toBe(0);
   });
 
-  it('should handle topics without brief attribute', () => {
-    const xml = `<section>
-入门指南
-<topic level="初学">概览</topic>
-</section>`;
-    const topics = parseOutlineTopics(xml);
+  it('should extract brief from topics', () => {
+    const topics = parseOutlineJson(sampleJson);
+    expect(topics[0].brief).toBe('项目定位与核心功能');
+    expect(topics[1].brief).toBe('5 分钟体验');
+  });
+
+  it('should handle topics without brief field', () => {
+    const json = `{"sections":[{"name":"入门指南","topics":[{"level":"初学","title":"概览"}]}]}`;
+    const topics = parseOutlineJson(json);
     expect(topics.length).toBe(1);
     expect(topics[0].brief).toBe('');
   });
+});
 
-  it('should handle real outline file', () => {
-    const outlinePath = '.wiki/2026-05-02T22-55-36/_outline.xml';
-    if (fs.existsSync(outlinePath)) {
-      const content = fs.readFileSync(outlinePath, 'utf-8');
-      const topics = parseOutlineTopics(content);
-      expect(topics.length).toBeGreaterThan(0);
+describe('stripCodeFence', () => {
+  it('should remove ```json code fence', () => {
+    expect(stripCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+  });
 
-      const sections = [...new Set(topics.map(t => t.section).filter(Boolean))];
-      expect(sections).toContain('入门指南');
-      expect(sections).toContain('深入探索');
-    }
+  it('should remove ``` code fence', () => {
+    expect(stripCodeFence('```\n{"a":1}\n```')).toBe('{"a":1}');
+  });
+
+  it('should return original if no fence', () => {
+    expect(stripCodeFence('{"a":1}')).toBe('{"a":1}');
   });
 });

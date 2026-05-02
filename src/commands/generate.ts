@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import inquirer from 'inquirer';
 import { loadConfig } from '../config/config-store.js';
-import { LLMClient } from '../ai/llm-client.js';
+import { LLMClient, stripCodeFence } from '../ai/llm-client.js';
 import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
 import { renderPrompt } from '../ai/prompts.js';
 import { toolDefinitions, executeToolCall } from '../ai/tools.js';
@@ -79,7 +79,7 @@ export async function generateCommand(): Promise<void> {
       name: 'concurrency',
       message: 'Number of concurrent page generations:',
       default: 3,
-      when: (answers) => answers.parallel,
+      when: (answers: any) => answers.parallel,
       validate: (input: any) => (input as number) > 0 && (input as number) <= 10 ? true : 'Enter a number between 1 and 10',
     },
   ]);
@@ -102,8 +102,8 @@ export async function generateCommand(): Promise<void> {
     if (!retry) break;
 
     logInfo(`Retrying ${failed.length} page(s)...`);
+    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3, retryList: [...failed] });
     failed.length = 0;
-    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3, retryList: failed.concat() });
     failed.push(...retryResult);
   }
 
@@ -135,6 +135,8 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
     { role: 'user', content: userPrompt },
   ];
 
+  const useJsonMode = config.jsonMode === true;
+
   let finalContent = '';
   const maxIterations = 25;
 
@@ -142,7 +144,7 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
     logInfo(`LLM round ${i + 1} (streaming below)...`);
 
     try {
-      const fullContent = await collectFullResponse(client, messages, config, true);
+      const fullContent = await collectFullResponse(client, messages, config, true, useJsonMode);
 
       if (!fullContent) {
         logError('No response from LLM');
@@ -151,17 +153,17 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
 
       finalContent = fullContent;
 
-      if (fullContent.includes('<section>')) {
+      // Try to parse as JSON
+      const topics = parseOutlineJson(fullContent);
+      if (topics.length > 0) {
         logSuccess('Outline generated successfully.');
-
-        const topics = parseOutlineTopics(fullContent, config.lang);
-
-        await writeTextFile(join(TEMP_DIR, '_outline.xml'), fullContent);
+        await writeTextFile(join(TEMP_DIR, '_outline.json'), fullContent);
         return topics;
       }
 
+      // If no JSON found, continue the conversation
       const response: ChatMessage = { role: 'assistant', content: fullContent };
-      logSuccess(`Got ${fullContent.length} chars of response.`);
+      logSuccess(`Got ${fullContent.length} chars of response (no valid JSON found).`);
       messages.push(response);
 
     } catch (err: any) {
@@ -170,18 +172,65 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
     }
   }
 
-  if (finalContent && finalContent.includes('<section>')) {
-    return parseOutlineTopics(finalContent, config.lang);
+  // Final attempt to parse whatever we have
+  if (finalContent) {
+    const topics = parseOutlineJson(finalContent);
+    if (topics.length > 0) return topics;
   }
 
   return [];
+}
+
+function parseOutlineJson(text: string): Topic[] {
+  let cleaned = stripCodeFence(text);
+
+  // Try to find a JSON object in the text
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return [];
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.sections || !Array.isArray(parsed.sections)) return [];
+
+    const topics: Topic[] = [];
+
+    for (const section of parsed.sections) {
+      const sectionName = section.name || '';
+      if (!section.topics || !Array.isArray(section.topics)) continue;
+
+      for (const item of section.topics) {
+        if (item.type === 'group') {
+          topics.push({
+            title: item.title,
+            level: '',
+            slug: '',
+            section: sectionName,
+            isGroup: true,
+          });
+        } else {
+          topics.push({
+            title: item.title,
+            level: item.level || '中级',
+            slug: toSlug(item.title),
+            section: sectionName,
+            brief: item.brief || '',
+          });
+        }
+      }
+    }
+
+    return topics;
+  } catch {
+    return [];
+  }
 }
 
 async function collectFullResponse(
   client: LLMClient,
   messages: ChatMessage[],
   config: WikiCliConfig,
-  stream: boolean
+  stream: boolean,
+  jsonMode?: boolean
 ): Promise<string | null> {
   let accumulatedContent = '';
   let accumulatedReasoning = '';
@@ -199,8 +248,7 @@ async function collectFullResponse(
     const toolCallsMap = new Map<string, ToolCall>();
 
     if (stream) {
-      // Streaming mode: real-time output via process.stdout
-      const streamIter = client.chatStream(messages, toolDefinitions);
+      const streamIter = client.chatStream(messages, toolDefinitions, jsonMode);
 
       try {
         for await (const chunk of streamIter) {
@@ -239,9 +287,8 @@ async function collectFullResponse(
         return null;
       }
     } else {
-      // Silent mode: no output, uses chat() non-streaming
       try {
-        const response = await client.chat(messages, toolDefinitions);
+        const response = await client.chat(messages, toolDefinitions, jsonMode);
 
         currentContent = response.content || '';
         currentReasoning = response.reasoning_content || '';
@@ -276,7 +323,6 @@ async function collectFullResponse(
       return currentContent;
     }
 
-    // Process tool calls
     const toolCalls = [...toolCallsMap.values()];
     messages.push({
       role: 'assistant',
@@ -321,71 +367,6 @@ async function collectFullResponse(
   }
 
   return null;
-}
-
-function parseOutlineTopics(xmlContent: string, lang: string): Topic[] {
-  const topics: Topic[] = [];
-  let currentSection = '';
-  let pendingSection = false;
-
-  const lines = xmlContent.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const sectionMatch = trimmed.match(/^<section>\s*([^<]*)/);
-    if (sectionMatch) {
-      const name = sectionMatch[1].trim();
-      if (name) {
-        currentSection = name;
-        pendingSection = false;
-      } else {
-        pendingSection = true;
-      }
-      continue;
-    }
-
-    if (pendingSection) {
-      currentSection = trimmed;
-      pendingSection = false;
-      continue;
-    }
-
-    if (trimmed.startsWith('</section>')) {
-      currentSection = '';
-      pendingSection = false;
-      continue;
-    }
-
-    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"(?:\s+brief="([^"]*)")?>([^<]*)<\/topic>/);
-    if (topicMatch) {
-      const title = topicMatch[3].trim();
-      const level = topicMatch[1].trim();
-      const brief = topicMatch[2]?.trim() || '';
-      topics.push({
-        title,
-        level,
-        slug: toSlug(title),
-        section: currentSection,
-        brief,
-      });
-      continue;
-    }
-
-    const groupMatch = trimmed.match(/<group>([^<]*)<\/group>/);
-    if (groupMatch) {
-      const title = groupMatch[1].trim();
-      topics.push({
-        title,
-        level: '',
-        slug: '',
-        section: currentSection,
-        isGroup: true,
-      });
-    }
-  }
-
-  return topics;
 }
 
 interface PageGenOptions {
@@ -467,8 +448,6 @@ async function generatePages(
 
   if (options.parallel) {
     const total = pageTopics.length;
-    let completed = 0;
-
     await runConcurrent(
       pageTopics.map((topic, i) => () => generateOne(topic, i + 1, total)),
       options.concurrency
@@ -500,25 +479,27 @@ async function runConcurrent(tasks: (() => Promise<void>)[], concurrency: number
 }
 
 async function generateIndex(wikiDir: string, topics: Topic[]): Promise<void> {
-  const lines: string[] = ['# Wiki Documentation\n'];
-
+  const jsonOut: { sections: { name: string; topics: any[] }[] } = { sections: [] };
   const sections = [...new Set(topics.map(t => t.section).filter(Boolean))];
 
   for (const section of sections) {
-    lines.push(`<section>\n${section}`);
     const sectionTopics = topics.filter(t => t.section === section);
+    const items: any[] = [];
 
     for (const topic of sectionTopics) {
       if (topic.isGroup) {
-        lines.push(`<group>${topic.title}</group>`);
+        items.push({ type: 'group', title: topic.title });
       } else {
-        const briefAttr = topic.brief ? ` brief="${topic.brief.replace(/"/g, '&quot;')}"` : '';
-        lines.push(`<topic level="${topic.level}"${briefAttr}>${topic.title}</topic>`);
+        items.push({
+          level: topic.level,
+          title: topic.title,
+          brief: topic.brief || '',
+        });
       }
     }
 
-    lines.push('</section>\n');
+    jsonOut.sections.push({ name: section, topics: items });
   }
 
-  await writeTextFile(join(wikiDir, 'index.md'), lines.join('\n'));
+  await writeTextFile(join(wikiDir, 'index.json'), JSON.stringify(jsonOut, null, 2));
 }

@@ -1,7 +1,7 @@
 import inquirer from 'inquirer';
-import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath } from '../config/config-store.js';
+import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath, supportsJsonMode } from '../config/config-store.js';
 import type { WikiCliConfig } from '../config/config-store.js';
-import { logSuccess, logInfo, logError } from '../utils/progress.js';
+import { logSuccess } from '../utils/progress.js';
 
 export async function configCommand(options: Partial<WikiCliConfig>): Promise<void> {
   const models = loadDefaultModels();
@@ -15,6 +15,7 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
       model: options.model,
       apiKey: options.apiKey,
       lang: options.lang || 'zh',
+      jsonMode: options.jsonMode,
     };
     await saveConfig(config);
     logSuccess('Configuration saved.');
@@ -36,8 +37,10 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
 
   let baseUrl: string;
   let model: string;
+  let provider: string;
 
   if (providerChoice === '__custom__') {
+    provider = 'Custom';
     const customAnswers = await inquirer.prompt([
       { type: 'input', name: 'baseUrl', message: 'Enter Base URL:', default: existingConfig?.baseUrl },
       { type: 'input', name: 'model', message: 'Enter model name:', default: existingConfig?.model },
@@ -45,6 +48,7 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
     baseUrl = customAnswers.baseUrl;
     model = customAnswers.model;
   } else {
+    provider = providerChoice;
     const providerModels = getModelsByProvider(models, providerChoice);
     const { selectedModel } = await inquirer.prompt([
       {
@@ -71,6 +75,22 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
     },
   ]);
 
+  let jsonMode: boolean | undefined;
+  const known = supportsJsonMode(provider);
+  if (known === undefined) {
+    const { jm } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'jm',
+        message: 'Does this provider support JSON output mode (response_format: json_object)?',
+        default: true,
+      },
+    ]);
+    jsonMode = jm;
+  } else {
+    jsonMode = known;
+  }
+
   const { lang } = await inquirer.prompt([
     {
       type: 'input',
@@ -81,11 +101,12 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
   ]);
 
   const config: WikiCliConfig = {
-    provider: providerChoice === '__custom__' ? 'Custom' : providerChoice,
+    provider,
     baseUrl,
     model,
     apiKey,
     lang: lang || 'zh',
+    jsonMode,
   };
 
   await saveConfig(config);

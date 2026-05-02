@@ -49,7 +49,11 @@ function serializeMessage(m: ChatMessage): Record<string, any> {
   return msg;
 }
 
-function buildRequest(config: WikiCliConfig, messages: ChatMessage[], tools?: ToolDefinition[], stream?: boolean): { url: string; headers: Record<string, string>; body: string } {
+export function stripCodeFence(text: string): string {
+  return text.replace(/^```(?:json)?\s*\n?/gm, '').replace(/\n?```\s*$/g, '').trim();
+}
+
+function buildRequest(config: WikiCliConfig, messages: ChatMessage[], tools?: ToolDefinition[], stream?: boolean, jsonMode?: boolean): { url: string; headers: Record<string, string>; body: string } {
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const body: Record<string, any> = {
     model: config.model,
@@ -57,6 +61,9 @@ function buildRequest(config: WikiCliConfig, messages: ChatMessage[], tools?: To
   };
   if (stream) body.stream = true;
   if (tools && tools.length > 0) body.tools = tools;
+  if (jsonMode) {
+    body.response_format = { type: 'json_object' };
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -83,9 +90,10 @@ export class LLMClient {
 
   async *chatStream(
     messages: ChatMessage[],
-    tools?: ToolDefinition[]
+    tools?: ToolDefinition[],
+    jsonMode?: boolean
   ): AsyncGenerator<StreamChunk> {
-    const { url, headers, body: bodyStr } = buildRequest(this.config, messages, tools, true);
+    const { url, headers, body: bodyStr } = buildRequest(this.config, messages, tools, true, jsonMode);
     let lastError: string | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -189,9 +197,10 @@ export class LLMClient {
 
   async chat(
     messages: ChatMessage[],
-    tools?: ToolDefinition[]
+    tools?: ToolDefinition[],
+    jsonMode?: boolean
   ): Promise<LLMResponse> {
-    const { url, headers, body: bodyStr } = buildRequest(this.config, messages, tools);
+    const { url, headers, body: bodyStr } = buildRequest(this.config, messages, tools, false, jsonMode);
     let lastError: string | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

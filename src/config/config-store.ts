@@ -10,6 +10,7 @@ export interface WikiCliConfig {
   model: string;
   apiKey: string;
   lang: string;
+  jsonMode?: boolean;
 }
 
 export interface ModelEntry {
@@ -22,6 +23,19 @@ export interface ModelEntry {
 
 const CONFIG_DIR = join(homedir(), '.wiki-cli');
 const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
+
+const JSON_MODE_PROVIDERS = new Set([
+  'OpenAI',
+  'DeepSeek',
+  'xAI Grok',
+  'Mistral',
+  'Kimi (Moonshot)',
+]);
+
+export function supportsJsonMode(provider: string): boolean | undefined {
+  if (provider === 'Custom') return undefined; // unknown, ask user
+  return JSON_MODE_PROVIDERS.has(provider);
+}
 
 export function getConfigPath(): string {
   return CONFIG_PATH;
