@@ -18,7 +18,8 @@ interface Topic {
   level: string;
   slug: string;
   section: string;
-  brief?: string;
+  description?: string;
+  task?: string;
   isGroup?: boolean;
 }
 
@@ -208,12 +209,16 @@ function parseOutlineJson(text: string): Topic[] {
             isGroup: true,
           });
         } else {
+          // Support both legacy brief and new description+task
+          const description = item.description || item.brief || '';
+          const task = item.task || item.brief || '';
           topics.push({
             title: item.title,
             level: item.level || '中级',
             slug: toSlug(item.title),
             section: sectionName,
-            brief: item.brief || '',
+            description,
+            task,
           });
         }
       }
@@ -385,9 +390,9 @@ async function generatePages(
   const pageTopics = options.retryList || allTopics.filter(t => !t.isGroup);
   const failed: Topic[] = [];
 
-  const availableSlugs = allTopics
+  const availablePages = allTopics
     .filter(t => !t.isGroup && t.slug)
-    .map(t => `- ${t.slug}.md`)
+    .map(t => `- slug: ${t.slug}.md | 标题: ${t.title} | 简介: ${(t.description || t.task || '').slice(0, 80)}`)
     .join('\n');
 
   const osInfo = `${process.platform} ${process.arch}`;
@@ -419,8 +424,8 @@ async function generatePages(
       pageSlug: slug,
       projectSummary: '',
       lang: config.lang,
-      availableSlugs,
-      pageBrief: topic.brief || '',
+      availablePages,
+      pageTask: topic.task || '',
     };
 
     const systemPrompt = await renderPrompt('page-system.md', pageSysVars);
@@ -490,11 +495,10 @@ async function generateIndex(wikiDir: string, topics: Topic[]): Promise<void> {
       if (topic.isGroup) {
         items.push({ type: 'group', title: topic.title });
       } else {
-        items.push({
-          level: topic.level,
-          title: topic.title,
-          brief: topic.brief || '',
-        });
+        const entry: any = { level: topic.level, title: topic.title };
+        if (topic.description) entry.description = topic.description;
+        if (topic.task) entry.task = topic.task;
+        items.push(entry);
       }
     }
 

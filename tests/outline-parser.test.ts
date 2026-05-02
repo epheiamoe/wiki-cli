@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { stripCodeFence } from '../src/ai/llm-client.js';
 
-function parseOutlineJson(text: string): { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] {
+function parseOutlineJson(text: string): { title: string; level: string; section: string; description?: string; task?: string; isGroup?: boolean }[] {
   let cleaned = stripCodeFence(text);
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return [];
@@ -20,7 +20,9 @@ function parseOutlineJson(text: string): { title: string; level: string; section
         if (item.type === 'group') {
           topics.push({ title: item.title, level: '', section: sectionName, isGroup: true });
         } else {
-          topics.push({ title: item.title, level: item.level || '中级', section: sectionName, brief: item.brief || '' });
+          const description = item.description || item.brief || '';
+          const task = item.task || item.brief || '';
+          topics.push({ title: item.title, level: item.level || '中级', section: sectionName, description, task });
         }
       }
     }
@@ -59,7 +61,8 @@ describe('parseOutlineJson', () => {
     expect(introTopics.length).toBe(2);
     expect(introTopics[0].title).toBe('概览');
     expect(introTopics[0].level).toBe('初学');
-    expect(introTopics[0].brief).toBe('项目定位与核心功能');
+    expect(introTopics[0].description).toBe('项目定位与核心功能');
+    expect(introTopics[0].task).toBe('项目定位与核心功能');
 
     const deepTopics = topics.filter(t => t.section === '深入探索');
     expect(deepTopics.length).toBe(2);
@@ -86,17 +89,36 @@ describe('parseOutlineJson', () => {
     expect(parseOutlineJson('{"wrong": "structure"}').length).toBe(0);
   });
 
-  it('should extract brief from topics', () => {
+  it('should extract description and task from legacy brief', () => {
     const topics = parseOutlineJson(sampleJson);
-    expect(topics[0].brief).toBe('项目定位与核心功能');
-    expect(topics[1].brief).toBe('5 分钟体验');
+    expect(topics[0].description).toBe('项目定位与核心功能');
+    expect(topics[0].task).toBe('项目定位与核心功能');
+    expect(topics[1].description).toBe('5 分钟体验');
+    expect(topics[1].task).toBe('5 分钟体验');
   });
 
-  it('should handle topics without brief field', () => {
+  it('should handle topics with description and task', () => {
+    const json = `{"sections":[{"name":"入门指南","topics":[{"level":"初学","title":"概览","description":"项目定位","task":"阅读 cli.ts 写概述"}]}]}`;
+    const topics = parseOutlineJson(json);
+    expect(topics.length).toBe(1);
+    expect(topics[0].description).toBe('项目定位');
+    expect(topics[0].task).toBe('阅读 cli.ts 写概述');
+  });
+
+  it('should fallback to brief when description/task missing', () => {
+    const json = `{"sections":[{"name":"入门指南","topics":[{"level":"初学","title":"概览","brief":"旧格式说明"}]}]}`;
+    const topics = parseOutlineJson(json);
+    expect(topics.length).toBe(1);
+    expect(topics[0].description).toBe('旧格式说明');
+    expect(topics[0].task).toBe('旧格式说明');
+  });
+
+  it('should handle topics without description or brief', () => {
     const json = `{"sections":[{"name":"入门指南","topics":[{"level":"初学","title":"概览"}]}]}`;
     const topics = parseOutlineJson(json);
     expect(topics.length).toBe(1);
-    expect(topics[0].brief).toBe('');
+    expect(topics[0].description).toBe('');
+    expect(topics[0].task).toBe('');
   });
 });
 
