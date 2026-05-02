@@ -1,13 +1,16 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, extname, resolve } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, extname, resolve, sep, normalize } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { execSync } from 'node:child_process';
 import { marked } from 'marked';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
+import { readTextFile } from '../utils/file.js';
+
+const PROJECT_ROOT = resolve(process.cwd());
 
 export async function browseCommand(): Promise<void> {
-  const wikiDir = resolve(process.cwd(), '.wiki');
+  const wikiDir = join(PROJECT_ROOT, '.wiki');
 
   if (!existsSync(wikiDir)) {
     logError('No .wiki directory found. Run "wiki-cli generate" first.');
@@ -57,7 +60,7 @@ export async function browseCommand(): Promise<void> {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url || '/', `http://localhost:${port}`);
-      let pathname = url.pathname;
+      const pathname = url.pathname;
 
       if (pathname === '/') {
         await serveHtml(res, wikiPath, sidebarItems, firstPage);
@@ -70,12 +73,36 @@ export async function browseCommand(): Promise<void> {
         if (existsSync(mdPath)) {
           const content = await readFile(mdPath, 'utf-8');
           const html = await marked.parse(content);
+          const fixed = fixContentReferences(html);
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(html);
+          res.end(fixed);
         } else {
           res.writeHead(404);
           res.end('Page not found');
         }
+        return;
+      }
+
+      if (pathname.startsWith('/api/source/')) {
+        const rawPath = decodeURIComponent(pathname.slice(12));
+        const safePath = sanitizePath(rawPath);
+        if (!safePath) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
+        const fullPath = join(PROJECT_ROOT, safePath);
+        if (!existsSync(fullPath)) {
+          res.writeHead(404);
+          res.end('Source file not found');
+          return;
+        }
+        const content = await readFile(fullPath, 'utf-8');
+        const ext = extname(fullPath);
+        const lang = extToLang(ext);
+        const html = `<pre><code class="language-${lang}">${escapeHtml(content)}</code></pre>`;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
         return;
       }
 
@@ -110,6 +137,46 @@ export async function browseCommand(): Promise<void> {
       logInfo(`Please open ${url} in your browser.`);
     }
   });
+}
+
+function sanitizePath(rawPath: string): string | null {
+  const normalized = normalize(rawPath).replace(/^(\.\.(\/|\\))+/g, '');
+  const resolved = resolve(PROJECT_ROOT, normalized);
+  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) {
+    return null;
+  }
+  return normalized;
+}
+
+function extToLang(ext: string): string {
+  const map: Record<string, string> = {
+    '.ts': 'typescript',
+    '.js': 'javascript',
+    '.json': 'json',
+    '.md': 'markdown',
+    '.yml': 'yaml',
+    '.yaml': 'yaml',
+    '.html': 'html',
+    '.css': 'css',
+    '.sh': 'bash',
+    '.bash': 'bash',
+  };
+  return map[ext] || 'plaintext';
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fixContentReferences(html: string): string {
+  return html.replace(
+    /\[来源：([^\]]+)\]/g,
+    '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>'
+  );
 }
 
 function parseIndex(content: string): { title: string; slug: string; level: string }[] {
@@ -189,10 +256,11 @@ async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: { 
   let firstContent = '';
   if (firstPage && existsSync(firstPage)) {
     const md = await readFile(firstPage, 'utf-8');
-    firstContent = await marked.parse(md);
+    firstContent = fixContentReferences(await marked.parse(md));
   }
 
   const sidebarHtml = buildSidebarHtml(sidebarItems);
+  const slugs = sidebarItems.filter(i => i.slug).map(i => i.slug);
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -208,7 +276,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .sidebar h2 { font-size: 16px; color: #58a6ff; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
 .sidebar ul { list-style: none; }
 .sidebar li { margin-bottom: 4px; }
-.sidebar a { color: #8b949e; text-decoration: none; font-size: 14px; display: block; padding: 4px 8px; border-radius: 4px; transition: all 0.2s; }
+.sidebar a { color: #8b949e; text-decoration: none; font-size: 14px; display: block; padding: 4px 8px; border-radius: 4px; transition: all 0.2s; cursor: pointer; }
 .sidebar a:hover { color: #58a6ff; background: #1c2333; }
 .sidebar .nav-group { color: #484f58; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 12px 8px 4px; font-weight: 600; }
 .content { flex: 1; padding: 40px; overflow-y: auto; max-width: 900px; }
@@ -223,6 +291,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .content th, .content td { border: 1px solid #30363d; padding: 8px 12px; text-align: left; }
 .content th { background: #161b22; color: #f0f6fc; }
 .content a { color: #58a6ff; }
+.content a.source-ref { color: #8b949e; font-size: 13px; text-decoration: none; border: 1px solid #30363d; border-radius: 3px; padding: 1px 6px; margin-left: 4px; }
+.content a.source-ref:hover { color: #58a6ff; border-color: #58a6ff; }
 .content blockquote { border-left: 4px solid #30363d; padding-left: 16px; color: #8b949e; margin-bottom: 16px; }
 .content ul, .content ol { margin-bottom: 16px; padding-left: 24px; }
 .content li { margin-bottom: 4px; }
@@ -236,14 +306,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="content" id="content">${firstContent}</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
+const wikiSlugs = ${JSON.stringify(slugs)};
+
 async function loadPage(encodedSlug) {
   const slug = decodeURIComponent(encodedSlug);
   const res = await fetch('/api/page/' + slug + '.md');
   const html = await res.text();
   document.getElementById('content').innerHTML = html;
   hljs.highlightAll();
+  history.replaceState(null, '', '#' + slug);
 }
-document.addEventListener('DOMContentLoaded', hljs.highlightAll);
+
+document.addEventListener('DOMContentLoaded', function() {
+  hljs.highlightAll();
+
+  if (location.hash) {
+    const slug = decodeURIComponent(location.hash.slice(1));
+    if (wikiSlugs.includes(slug)) {
+      loadPage(slug);
+    }
+  }
+
+  document.getElementById('content').addEventListener('click', function(e) {
+    const anchor = e.target.closest('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href || href.startsWith('http') || href.startsWith('/api/') || href.startsWith('#')) return;
+    e.preventDefault();
+    const slug = href.replace(/\\.md$/, '');
+    if (wikiSlugs.includes(slug)) {
+      loadPage(slug);
+    }
+  });
+});
 </script>
 </body>
 </html>`;

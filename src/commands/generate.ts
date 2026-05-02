@@ -18,6 +18,7 @@ interface Topic {
   level: string;
   slug: string;
   section: string;
+  brief?: string;
   isGroup?: boolean;
 }
 
@@ -65,9 +66,27 @@ export async function generateCommand(): Promise<void> {
 
   logSuccess(`Generated ${topics.length} topics.`);
 
+  // Ask about parallel generation
+  const { parallel, concurrency } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'parallel',
+      message: 'Generate pages in parallel? (faster, no streaming output)',
+      default: false,
+    },
+    {
+      type: 'number',
+      name: 'concurrency',
+      message: 'Number of concurrent page generations:',
+      default: 3,
+      when: (answers) => answers.parallel,
+      validate: (input: any) => (input as number) > 0 && (input as number) <= 10 ? true : 'Enter a number between 1 and 10',
+    },
+  ]);
+
   // Phase 2: Generate pages
   logInfo('Phase 2: Generating Wiki pages...');
-  let failed = await generatePages(client, config, workDir, topics);
+  const failed = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3 });
 
   while (failed.length > 0) {
     logWarning(`${failed.length} page(s) failed to generate.`);
@@ -83,7 +102,9 @@ export async function generateCommand(): Promise<void> {
     if (!retry) break;
 
     logInfo(`Retrying ${failed.length} page(s)...`);
-    failed = await generatePages(client, config, workDir, topics, failed);
+    failed.length = 0;
+    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3, retryList: failed.concat() });
+    failed.push(...retryResult);
   }
 
   if (failed.length > 0) {
@@ -121,7 +142,7 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
     logInfo(`LLM round ${i + 1} (streaming below)...`);
 
     try {
-      const fullContent = await collectFullResponse(client, messages, config, 'outline');
+      const fullContent = await collectFullResponse(client, messages, config, true);
 
       if (!fullContent) {
         logError('No response from LLM');
@@ -149,7 +170,6 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
     }
   }
 
-  // Try to parse whatever we have
   if (finalContent && finalContent.includes('<section>')) {
     return parseOutlineTopics(finalContent, config.lang);
   }
@@ -161,7 +181,7 @@ async function collectFullResponse(
   client: LLMClient,
   messages: ChatMessage[],
   config: WikiCliConfig,
-  phase: string
+  stream: boolean
 ): Promise<string | null> {
   let accumulatedContent = '';
   let accumulatedReasoning = '';
@@ -178,43 +198,65 @@ async function collectFullResponse(
     let contentStarted = false;
     const toolCallsMap = new Map<string, ToolCall>();
 
-    const streamIter = client.chatStream(messages, toolDefinitions);
+    if (stream) {
+      // Streaming mode: real-time output via process.stdout
+      const streamIter = client.chatStream(messages, toolDefinitions);
 
-    try {
-      for await (const chunk of streamIter) {
-        if (chunk.type === 'reasoning' && chunk.reasoning_content) {
-          currentReasoning += chunk.reasoning_content;
-          if (!reasoningStarted) {
-            reasoningStarted = true;
-            process.stdout.write(chalk.dim.yellow('\nThinking: '));
+      try {
+        for await (const chunk of streamIter) {
+          if (chunk.type === 'reasoning' && chunk.reasoning_content) {
+            currentReasoning += chunk.reasoning_content;
+            if (!reasoningStarted) {
+              reasoningStarted = true;
+              process.stdout.write(chalk.dim.yellow('\nThinking: '));
+            }
+            process.stdout.write(chalk.dim.yellow(chunk.reasoning_content));
+          } else if (chunk.type === 'content') {
+            if (!contentStarted && reasoningStarted) {
+              contentStarted = true;
+              console.log('');
+            }
+            currentContent += chunk.content ?? '';
+            process.stdout.write(chunk.content ?? '');
+          } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+            hasToolCalls = true;
+            const tc = chunk.tool_call;
+            const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
+            if (toolCallsMap.has(key)) {
+              const existing = toolCallsMap.get(key)!;
+              existing.function.arguments += tc.function.arguments;
+              if (tc.id && !existing.id) existing.id = tc.id;
+            } else {
+              toolCallsMap.set(key, { ...tc });
+            }
+          } else if (chunk.type === 'error') {
+            logError(chunk.error || 'Unknown error');
+            return null;
           }
-          process.stdout.write(chalk.dim.yellow(chunk.reasoning_content));
-        } else if (chunk.type === 'content') {
-          if (!contentStarted && reasoningStarted) {
-            contentStarted = true;
-            console.log('');
-          }
-          currentContent += chunk.content ?? '';
-          process.stdout.write(chunk.content ?? '');
-        } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+        }
+      } catch (err: any) {
+        logError(`Stream connection error: ${err.message}`);
+        return null;
+      }
+    } else {
+      // Silent mode: no output, uses chat() non-streaming
+      try {
+        const response = await client.chat(messages, toolDefinitions);
+
+        currentContent = response.content || '';
+        currentReasoning = response.reasoning_content || '';
+
+        if (response.tool_calls && response.tool_calls.length > 0) {
           hasToolCalls = true;
-          const tc = chunk.tool_call;
-          const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
-          if (toolCallsMap.has(key)) {
-            const existing = toolCallsMap.get(key)!;
-            existing.function.arguments += tc.function.arguments;
-            if (tc.id && !existing.id) existing.id = tc.id;
-          } else {
+          for (const tc of response.tool_calls) {
+            const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
             toolCallsMap.set(key, { ...tc });
           }
-        } else if (chunk.type === 'error') {
-          logError(chunk.error || 'Unknown error');
-          return null;
         }
+      } catch (err: any) {
+        logError(`API error: ${err.message}`);
+        return null;
       }
-    } catch (err: any) {
-      logError(`Stream connection error: ${err.message}`);
-      return null;
     }
 
     if (currentContent) {
@@ -230,7 +272,7 @@ async function collectFullResponse(
         content: currentContent || null,
         reasoning_content: currentReasoning || null,
       });
-      console.log();
+      if (stream) console.log();
       return currentContent;
     }
 
@@ -247,8 +289,10 @@ async function collectFullResponse(
       })),
     });
 
-    console.log();
-    logInfo(`Executing ${toolCalls.length} tool call(s)...`);
+    if (stream) {
+      console.log();
+      logInfo(`Executing ${toolCalls.length} tool call(s)...`);
+    }
 
     for (const tc of toolCalls) {
       let args: any;
@@ -258,9 +302,9 @@ async function collectFullResponse(
         args = {};
       }
 
-      logToolCall(tc.function.name, args);
+      if (stream) logToolCall(tc.function.name, args);
       const result = await executeToolCall(tc.function.name, args);
-      logToolResult(tc.function.name, result);
+      if (stream) logToolResult(tc.function.name, result);
 
       messages.push({
         role: 'tool',
@@ -287,6 +331,7 @@ function parseOutlineTopics(xmlContent: string, lang: string): Topic[] {
   const lines = xmlContent.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
+    if (!trimmed) continue;
 
     const sectionMatch = trimmed.match(/^<section>\s*([^<]*)/);
     if (sectionMatch) {
@@ -312,15 +357,17 @@ function parseOutlineTopics(xmlContent: string, lang: string): Topic[] {
       continue;
     }
 
-    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)">([^<]*)<\/topic>/);
+    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"(?:\s+brief="([^"]*)")?>([^<]*)<\/topic>/);
     if (topicMatch) {
-      const title = topicMatch[2].trim();
+      const title = topicMatch[3].trim();
       const level = topicMatch[1].trim();
+      const brief = topicMatch[2]?.trim() || '';
       topics.push({
         title,
         level,
         slug: toSlug(title),
         section: currentSection,
+        brief,
       });
       continue;
     }
@@ -341,29 +388,43 @@ function parseOutlineTopics(xmlContent: string, lang: string): Topic[] {
   return topics;
 }
 
+interface PageGenOptions {
+  parallel: boolean;
+  concurrency: number;
+  retryList?: Topic[];
+}
+
 async function generatePages(
   client: LLMClient,
   config: WikiCliConfig,
   workDir: string,
-  topics: Topic[],
-  retryList?: Topic[]
+  allTopics: Topic[],
+  options: PageGenOptions
 ): Promise<Topic[]> {
-  const pageTopics = retryList || topics.filter(t => !t.isGroup);
+  const pageTopics = options.retryList || allTopics.filter(t => !t.isGroup);
   const failed: Topic[] = [];
 
-  for (let i = 0; i < pageTopics.length; i++) {
-    const topic = pageTopics[i];
-    const slug = topic.slug;
+  const availableSlugs = allTopics
+    .filter(t => !t.isGroup && t.slug)
+    .map(t => `- ${t.slug}.md`)
+    .join('\n');
 
+  const osInfo = `${process.platform} ${process.arch}`;
+
+  async function generateOne(topic: Topic, index: number, total: number): Promise<void> {
+    const slug = topic.slug;
     const pagePath = join(TEMP_DIR, `${slug}.md`);
-    if (!retryList && existsSync(pagePath)) {
-      logInfo(`[${i + 1}/${pageTopics.length}] Skipping already generated: ${topic.title}`);
-      continue;
+    if (!options.retryList && existsSync(pagePath)) {
+      if (!options.parallel) {
+        logInfo(`[${index}/${total}] Skipping already generated: ${topic.title}`);
+      }
+      return;
     }
 
-    logInfo(`[${i + 1}/${pageTopics.length}] Generating: ${topic.title} (${topic.level})`);
+    if (!options.parallel) {
+      logInfo(`[${index}/${total}] Generating: ${topic.title} (${topic.level})`);
+    }
 
-    const osInfo = `${process.platform} ${process.arch}`;
     const pageSysVars = {
       workDir,
       os: osInfo,
@@ -377,6 +438,8 @@ async function generatePages(
       pageSlug: slug,
       projectSummary: '',
       lang: config.lang,
+      availableSlugs,
+      pageBrief: topic.brief || '',
     };
 
     const systemPrompt = await renderPrompt('page-system.md', pageSysVars);
@@ -387,18 +450,53 @@ async function generatePages(
       { role: 'user', content: userPrompt },
     ];
 
-    const fullContent = await collectFullResponse(client, messages, config, 'page');
+    const fullContent = await collectFullResponse(client, messages, config, !options.parallel);
 
     if (fullContent) {
       await writeTextFile(pagePath, fullContent);
-      logSuccess(`Generated: ${topic.title}`);
+      if (options.parallel) {
+        logSuccess(`[${index}/${total}] Generated: ${topic.title}`);
+      } else {
+        logSuccess(`Generated: ${topic.title}`);
+      }
     } else {
       failed.push(topic);
-      logError(`Failed to generate: ${topic.title}`);
+      logError(`Failed: ${topic.title}`);
+    }
+  }
+
+  if (options.parallel) {
+    const total = pageTopics.length;
+    let completed = 0;
+
+    await runConcurrent(
+      pageTopics.map((topic, i) => () => generateOne(topic, i + 1, total)),
+      options.concurrency
+    );
+  } else {
+    const total = pageTopics.length;
+    for (let i = 0; i < total; i++) {
+      await generateOne(pageTopics[i], i + 1, total);
     }
   }
 
   return failed;
+}
+
+async function runConcurrent(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
+  const running = new Set<Promise<void>>();
+  const queue = [...tasks];
+
+  while (queue.length > 0 || running.size > 0) {
+    while (running.size < concurrency && queue.length > 0) {
+      const task = queue.shift()!;
+      const p = task().finally(() => running.delete(p));
+      running.add(p);
+    }
+    if (running.size > 0) {
+      await Promise.race(running);
+    }
+  }
 }
 
 async function generateIndex(wikiDir: string, topics: Topic[]): Promise<void> {
@@ -414,7 +512,8 @@ async function generateIndex(wikiDir: string, topics: Topic[]): Promise<void> {
       if (topic.isGroup) {
         lines.push(`<group>${topic.title}</group>`);
       } else {
-        lines.push(`<topic level="${topic.level}">${topic.title}</topic>`);
+        const briefAttr = topic.brief ? ` brief="${topic.brief.replace(/"/g, '&quot;')}"` : '';
+        lines.push(`<topic level="${topic.level}"${briefAttr}>${topic.title}</topic>`);
       }
     }
 

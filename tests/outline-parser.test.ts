@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Replicate parseOutlineTopics logic for testing
-function parseOutlineTopics(xmlContent: string): { title: string; level: string; section: string; isGroup?: boolean }[] {
-  const topics: { title: string; level: string; section: string; isGroup?: boolean }[] = [];
+function parseOutlineTopics(xmlContent: string): { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] {
+  const topics: { title: string; level: string; section: string; brief?: string; isGroup?: boolean }[] = [];
   let currentSection = '';
   let pendingSection = false;
 
@@ -42,9 +42,9 @@ function parseOutlineTopics(xmlContent: string): { title: string; level: string;
       continue;
     }
 
-    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)">([^<]*)<\/topic>/);
+    const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"(?:\s+brief="([^"]*)")?>([^<]*)<\/topic>/);
     if (topicMatch) {
-      topics.push({ title: topicMatch[2].trim(), level: topicMatch[1].trim(), section: currentSection });
+      topics.push({ title: topicMatch[3].trim(), level: topicMatch[1].trim(), brief: topicMatch[2]?.trim() || '', section: currentSection });
       continue;
     }
 
@@ -98,6 +98,27 @@ describe('parseOutlineTopics', () => {
   it('should return empty array for content without sections', () => {
     const topics = parseOutlineTopics('no sections here');
     expect(topics.length).toBe(0);
+  });
+
+  it('should parse brief attribute from topics', () => {
+    const xml = `<section>
+入门指南
+<topic level="初学" brief="核心功能概述，阅读 cli.ts">概览</topic>
+</section>`;
+    const topics = parseOutlineTopics(xml);
+    expect(topics.length).toBe(1);
+    expect(topics[0].brief).toBe('核心功能概述，阅读 cli.ts');
+    expect(topics[0].title).toBe('概览');
+  });
+
+  it('should handle topics without brief attribute', () => {
+    const xml = `<section>
+入门指南
+<topic level="初学">概览</topic>
+</section>`;
+    const topics = parseOutlineTopics(xml);
+    expect(topics.length).toBe(1);
+    expect(topics[0].brief).toBe('');
   });
 
   it('should handle real outline file', () => {
