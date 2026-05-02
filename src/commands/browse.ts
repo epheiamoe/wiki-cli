@@ -97,6 +97,14 @@ export async function browseCommand(): Promise<void> {
         return;
       }
 
+      // Redirect .md requests to the API route
+      if (pathname.endsWith('.md') && !pathname.startsWith('/api/')) {
+        const slug = pathname.replace(/\.md$/, '').replace(/^\//, '');
+        res.writeHead(302, { Location: '/api/page/' + encodeURIComponent(slug) + '.md' });
+        res.end();
+        return;
+      }
+
       const filePath = join(wikiPath, pathname);
       if (existsSync(filePath) && !filePath.endsWith('.md')) {
         const ext = extname(filePath);
@@ -372,11 +380,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const anchor = e.target.closest('a');
     if (!anchor) return;
     const href = anchor.getAttribute('href');
-    if (!href || href.startsWith('http') || href.startsWith('/api/') || href.startsWith('#')) return;
+    if (!href || href.startsWith('http') || href.startsWith('/api/') || href.startsWith('#') || href.startsWith('mailto:')) return;
     e.preventDefault();
-    const slug = href.replace(/\\.md$/, '');
-    if (wikiSlugs.includes(slug)) {
-      loadPage(slug);
+    if (href.endsWith('.md')) {
+      loadPage(href.replace(/\\.md$/, ''));
+    } else {
+      window.open('/api/source/' + href, '_blank');
     }
   });
 });
