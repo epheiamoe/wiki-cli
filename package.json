@@ -1,0 +1,33 @@
+{
+  "name": "wiki-cli",
+  "version": "1.0.0",
+  "description": "CLI tool to auto-generate structured Wiki documentation for local code repositories",
+  "main": "dist/cli.js",
+  "bin": {
+    "wiki-cli": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "inquirer": "^12.3.0",
+    "marked": "^15.0.4",
+    "highlight.js": "^11.11.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}

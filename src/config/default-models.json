@@ -1,0 +1,149 @@
+[
+  {
+    "provider": "OpenAI",
+    "model": "gpt-5.5",
+    "baseUrl": "https://api.openai.com/v1",
+    "description": "OpenAI GPT-5.5 (latest flagship)",
+    "pricingHint": "Most expensive, highest quality"
+  },
+  {
+    "provider": "OpenAI",
+    "model": "gpt-5.4",
+    "baseUrl": "https://api.openai.com/v1",
+    "description": "OpenAI GPT-5.4",
+    "pricingHint": "High quality, lower cost than 5.5"
+  },
+  {
+    "provider": "OpenAI",
+    "model": "gpt-5.4-mini",
+    "baseUrl": "https://api.openai.com/v1",
+    "description": "OpenAI GPT-5.4 Mini",
+    "pricingHint": "Balanced performance/cost"
+  },
+  {
+    "provider": "OpenAI",
+    "model": "gpt-5.4-nano",
+    "baseUrl": "https://api.openai.com/v1",
+    "description": "OpenAI GPT-5.4 Nano",
+    "pricingHint": "Fastest, cheapest OpenAI model"
+  },
+  {
+    "provider": "OpenAI",
+    "model": "gpt-5-mini",
+    "baseUrl": "https://api.openai.com/v1",
+    "description": "OpenAI GPT-5 Mini",
+    "pricingHint": "Legacy mini model"
+  },
+  {
+    "provider": "Google Gemini",
+    "model": "gemini-3.1-pro",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+    "description": "Google Gemini 3.1 Pro",
+    "pricingHint": "Competitive pricing, strong reasoning"
+  },
+  {
+    "provider": "Google Gemini",
+    "model": "gemini-3-flash",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+    "description": "Google Gemini 3 Flash",
+    "pricingHint": "Fast, low cost"
+  },
+  {
+    "provider": "Google Gemini",
+    "model": "gemini-3.1-flash-lite",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+    "description": "Google Gemini 3.1 Flash Lite",
+    "pricingHint": "Cheapest Gemini model"
+  },
+  {
+    "provider": "Anthropic",
+    "model": "claude-opus-4-7",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "description": "Anthropic Claude Opus 4.7",
+    "pricingHint": "Best for complex analysis"
+  },
+  {
+    "provider": "Anthropic",
+    "model": "claude-sonnet-4-6",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "description": "Anthropic Claude Sonnet 4.6",
+    "pricingHint": "Good balance of quality/speed"
+  },
+  {
+    "provider": "Anthropic",
+    "model": "claude-haiku-4-5",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "description": "Anthropic Claude Haiku 4.5",
+    "pricingHint": "Fast, low cost"
+  },
+  {
+    "provider": "xAI Grok",
+    "model": "grok-4.3",
+    "baseUrl": "https://api.x.ai/v1",
+    "description": "xAI Grok 4.3",
+    "pricingHint": "Competitive pricing"
+  },
+  {
+    "provider": "xAI Grok",
+    "model": "grok-4.20-reasoning",
+    "baseUrl": "https://api.x.ai/v1",
+    "description": "xAI Grok 4.20 Reasoning",
+    "pricingHint": "Enhanced reasoning"
+  },
+  {
+    "provider": "xAI Grok",
+    "model": "grok-4-1-fast-reasoning",
+    "baseUrl": "https://api.x.ai/v1",
+    "description": "xAI Grok 4.1 Fast Reasoning",
+    "pricingHint": "Fast reasoning variant"
+  },
+  {
+    "provider": "DeepSeek",
+    "model": "deepseek-v4-pro",
+    "baseUrl": "https://api.deepseek.com",
+    "description": "DeepSeek V4 Pro",
+    "pricingHint": "High quality, competitive price"
+  },
+  {
+    "provider": "DeepSeek",
+    "model": "deepseek-v4-flash",
+    "baseUrl": "https://api.deepseek.com",
+    "description": "DeepSeek V4 Flash",
+    "pricingHint": "Fast, cost-effective"
+  },
+  {
+    "provider": "Kimi (Moonshot)",
+    "model": "kimi-k2.6",
+    "baseUrl": "https://api.moonshot.cn/v1",
+    "description": "Moonshot Kimi K2.6",
+    "pricingHint": "Latest Kimi model"
+  },
+  {
+    "provider": "Kimi (Moonshot)",
+    "model": "kimi-k2.5",
+    "baseUrl": "https://api.moonshot.cn/v1",
+    "description": "Moonshot Kimi K2.5",
+    "pricingHint": "Previous generation Kimi"
+  },
+  {
+    "provider": "Mistral",
+    "model": "mistral-large-3",
+    "baseUrl": "https://api.mistral.ai/v1",
+    "description": "Mistral Large 3",
+    "pricingHint": "Mistral's best model"
+  },
+  {
+    "provider": "Mistral",
+    "model": "devstral-2",
+    "baseUrl": "https://api.mistral.ai/v1",
+    "description": "Mistral Devstral 2",
+    "pricingHint": "Developer-focused model"
+  },
+  {
+    "provider": "Mistral",
+    "model": "ministral-14b",
+    "baseUrl": "https://api.mistral.ai/v1",
+    "description": "Mistral Ministral 14B",
+    "pricingHint": "Small, fast, cheap"
+  }
+]

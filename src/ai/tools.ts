@@ -1,0 +1,334 @@
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { join, relative, resolve, extname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+
+export interface ToolResult {
+  type: 'success' | 'error';
+  data: any;
+}
+
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, any>;
+  };
+}
+
+export const toolDefinitions: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'list_directory',
+      description: 'Get the directory structure tree',
+      parameters: {
+        type: 'object',
+        properties: {
+          dir_path: { type: 'string', description: 'Directory path' },
+          max_depth: { type: 'number', description: 'Maximum depth (default 3)', nullable: true }
+        },
+        required: ['dir_path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_files',
+      description: 'List files in a directory, optionally filtered by extension',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Directory path' },
+          extensions: { type: 'array', items: { type: 'string' }, description: 'File extensions to filter (e.g. [".ts", ".js"])', nullable: true }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_file',
+      description: 'Read the contents of a file, optionally limiting to a line range',
+      parameters: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'File path' },
+          start_line: { type: 'number', description: 'Start line (1-indexed)', nullable: true },
+          end_line: { type: 'number', description: 'End line (inclusive)', nullable: true }
+        },
+        required: ['file_path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_in_files',
+      description: 'Search for a pattern (keyword or regex) in files',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Root path to search in' },
+          pattern: { type: 'string', description: 'Search pattern (regex supported)' },
+          extensions: { type: 'array', items: { type: 'string' }, description: 'File extensions to filter', nullable: true }
+        },
+        required: ['path', 'pattern']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_log',
+      description: 'Get Git commit history',
+      parameters: {
+        type: 'object',
+        properties: {
+          max_count: { type: 'number', description: 'Maximum number of commits', nullable: true },
+          path: { type: 'string', description: 'File or directory path to filter', nullable: true }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_show',
+      description: 'Show details of a Git object (commit, tree, blob, tag)',
+      parameters: {
+        type: 'object',
+        properties: {
+          object: { type: 'string', description: 'Git object reference (commit hash, branch, etc.)' },
+          path: { type: 'string', description: 'File path within the commit', nullable: true }
+        },
+        required: ['object']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_remote_info',
+      description: 'Get remote repository information',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'dotenv_template',
+      description: 'Read the .env.example template file',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  }
+];
+
+async function listDirectory(dirPath: string, maxDepth?: number): Promise<ToolResult> {
+  try {
+    if (!dirPath || typeof dirPath !== 'string') {
+      return { type: 'error', data: 'dir_path is required' };
+    }
+    const absPath = resolve(dirPath);
+    if (!existsSync(absPath)) {
+      return { type: 'error', data: `Directory not found: ${dirPath}` };
+    }
+    const tree = await buildTree(absPath, absPath, 0, maxDepth ?? 3);
+    return { type: 'success', data: tree };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function buildTree(root: string, current: string, depth: number, maxDepth: number): Promise<any> {
+  if (depth > maxDepth) return { name: '...', type: 'truncated' };
+  const name = relative(root, current) || '.';
+  const entry = { name, type: 'directory', children: [] as any[] };
+  const items = await readdir(current, { withFileTypes: true });
+  for (const item of items) {
+    if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+    const fullPath = join(current, item.name);
+    if (item.isDirectory()) {
+      const child = await buildTree(root, fullPath, depth + 1, maxDepth);
+      entry.children.push(child);
+    } else {
+      entry.children.push({ name: item.name, type: 'file' });
+    }
+  }
+  return entry;
+}
+
+async function listFiles(path: string, extensions?: string[]): Promise<ToolResult> {
+  try {
+    if (!path || typeof path !== 'string') {
+      return { type: 'error', data: 'path is required' };
+    }
+    const absPath = resolve(path);
+    if (!existsSync(absPath)) {
+      return { type: 'error', data: `Path not found: ${path}` };
+    }
+    const result: string[] = [];
+    await collectFiles(absPath, result, extensions);
+    return { type: 'success', data: result };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function collectFiles(dir: string, result: string[], extensions?: string[]): Promise<void> {
+  const items = await readdir(dir, { withFileTypes: true });
+  for (const item of items) {
+    if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+    const fullPath = join(dir, item.name);
+    if (item.isDirectory()) {
+      await collectFiles(fullPath, result, extensions);
+    } else if (item.isFile()) {
+      if (!extensions || extensions.length === 0 || extensions.includes(extname(item.name))) {
+        result.push(fullPath);
+      }
+    }
+  }
+}
+
+async function readFileTool(filePath: string, startLine?: number, endLine?: number): Promise<ToolResult> {
+  try {
+    if (!filePath || typeof filePath !== 'string') {
+      return { type: 'error', data: 'file_path is required' };
+    }
+    const absPath = resolve(filePath);
+    if (!existsSync(absPath)) {
+      return { type: 'error', data: `File not found: ${filePath}` };
+    }
+    const content = await readFile(absPath, 'utf-8');
+    const lines = content.split('\n');
+    if (startLine !== undefined) {
+      const s = Math.max(0, startLine - 1);
+      const e = endLine !== undefined ? endLine : lines.length;
+      return { type: 'success', data: lines.slice(s, e).join('\n') };
+    }
+    return { type: 'success', data: content };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function searchInFiles(rootPath: string, pattern: string, extensions?: string[]): Promise<ToolResult> {
+  try {
+    if (!rootPath || typeof rootPath !== 'string') {
+      return { type: 'error', data: 'path is required' };
+    }
+    const absPath = resolve(rootPath);
+    if (!existsSync(absPath)) {
+      return { type: 'error', data: `Path not found: ${rootPath}` };
+    }
+    const regex = new RegExp(pattern, 'i');
+    const results: { file: string; line: number; content: string }[] = [];
+    await searchInDir(absPath, absPath, regex, extensions, results);
+    return { type: 'success', data: results };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function searchInDir(root: string, dir: string, regex: RegExp, extensions: string[] | undefined, results: { file: string; line: number; content: string }[]): Promise<void> {
+  const items = await readdir(dir, { withFileTypes: true });
+  for (const item of items) {
+    if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+    const fullPath = join(dir, item.name);
+    if (item.isDirectory()) {
+      await searchInDir(root, fullPath, regex, extensions, results);
+    } else if (item.isFile()) {
+      if (extensions && extensions.length > 0 && !extensions.includes(extname(item.name))) continue;
+      try {
+        const content = await readFile(fullPath, 'utf-8');
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (regex.test(lines[i])) {
+            results.push({ file: relative(root, fullPath), line: i + 1, content: lines[i].trim() });
+          }
+        }
+      } catch { }
+    }
+  }
+}
+
+async function gitLog(maxCount?: number, path?: string): Promise<ToolResult> {
+  try {
+    const count = maxCount ?? 20;
+    let cmd = `git log --oneline --max-count=${count}`;
+    if (path) cmd += ` -- "${path}"`;
+    const output = execSync(cmd, { encoding: 'utf-8', cwd: process.cwd() });
+    return { type: 'success', data: output.trim() };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function gitShow(object: string, path?: string): Promise<ToolResult> {
+  try {
+    let cmd = `git show ${object}`;
+    if (path) cmd += `:${path}`;
+    const output = execSync(cmd, { encoding: 'utf-8', cwd: process.cwd() });
+    return { type: 'success', data: output };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function gitRemoteInfo(): Promise<ToolResult> {
+  try {
+    const output = execSync('git remote -v', { encoding: 'utf-8', cwd: process.cwd() });
+    const lines = output.trim().split('\n').filter(Boolean);
+    const remotes = lines.map(line => {
+      const parts = line.split(/\s+/);
+      return { name: parts[0], url: parts[1], type: parts[2]?.replace(/[()]/g, '') || 'unknown' };
+    });
+    return { type: 'success', data: remotes };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function dotenvTemplate(): Promise<ToolResult> {
+  try {
+    const envPath = join(process.cwd(), '.env.example');
+    if (!existsSync(envPath)) {
+      return { type: 'error', data: '.env.example not found in current directory' };
+    }
+    const content = await readFile(envPath, 'utf-8');
+    return { type: 'success', data: content };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
+  list_directory: (args) => listDirectory(args.dir_path, args.max_depth),
+  list_files: (args) => listFiles(args.path, args.extensions),
+  read_file: (args) => readFileTool(args.file_path, args.start_line, args.end_line),
+  search_in_files: (args) => searchInFiles(args.path, args.pattern, args.extensions),
+  git_log: (args) => gitLog(args.max_count, args.path),
+  git_show: (args) => gitShow(args.object, args.path),
+  git_remote_info: () => gitRemoteInfo(),
+  dotenv_template: () => dotenvTemplate()
+};
+
+export async function executeToolCall(name: string, args: any): Promise<ToolResult> {
+  const handler = toolHandlers[name];
+  if (!handler) {
+    return { type: 'error', data: `Unknown tool: ${name}` };
+  }
+  return handler(args);
+}
