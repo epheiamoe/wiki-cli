@@ -127,7 +127,7 @@ async function saveCache(cachePath: string, embeddings: Record<string, number[]>
   try {
     const data: CacheData = {
       _model: model,
-      _generated: new Date().toISOString(),
+      _generated: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`; })(),
       ...embeddings,
     };
     await writeFile(cachePath, JSON.stringify(data), 'utf-8');
