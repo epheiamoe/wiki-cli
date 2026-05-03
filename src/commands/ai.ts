@@ -200,6 +200,10 @@ async function chatOnce(
       tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: tc.function })),
     });
 
+    if (toolCalls.length > 0) {
+      process.stdout.write('\n');
+    }
+
     for (const tc of toolCalls) {
       let args: any;
       try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }

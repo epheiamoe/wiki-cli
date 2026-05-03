@@ -340,7 +340,7 @@ async function dotenvTemplate(): Promise<ToolResult> {
   }
 }
 
-const WIKI_DIR = '.wiki';
+const WIKI_DIR = resolve(process.cwd(), '.wiki');
 
 async function findLatestWikiDir(): Promise<string | null> {
   try {
@@ -381,8 +381,15 @@ async function listWikiPages(): Promise<ToolResult> {
 
     // Fallback: scan .md files
     const files = await readdir(wikiPath);
-    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'index.md').map(f => `- ${f}`);
-    return { type: 'success', data: mdFiles.length > 0 ? mdFiles : ['No wiki pages found'] };
+    const mdFiles = files
+      .filter(f => f.endsWith('.md') && f !== 'index.md')
+      .sort()
+      .map(f => `- ${f}`);
+    if (mdFiles.length > 0) {
+      return { type: 'success', data: mdFiles };
+    }
+
+    return { type: 'success', data: ['No wiki pages found'] };
   } catch (err: any) {
     return { type: 'error', data: err.message };
   }
@@ -397,7 +404,16 @@ async function readWiki(slug: string): Promise<ToolResult> {
     if (!wikiPath) return { type: 'error', data: 'No wiki found. Run wiki-cli generate first.' };
 
     const mdPath = join(wikiPath, `${slug.replace(/\.md$/, '')}.md`);
-    if (!existsSync(mdPath)) return { type: 'error', data: `Page not found: ${slug}.md` };
+    if (!existsSync(mdPath)) {
+      // Fuzzy match: search for files containing the slug
+      const files = await readdir(wikiPath);
+      const match = files.find(f => f.endsWith('.md') && f !== 'index.md' && (f === `${slug}.md` || f.replace(/\.md$/, '').includes(slug) || slug.includes(f.replace(/\.md$/, ''))));
+      if (match) {
+        const content = await readFile(join(wikiPath, match), 'utf-8');
+        return { type: 'success', data: content };
+      }
+      return { type: 'error', data: `Page not found: ${slug}.md` };
+    }
 
     const content = await readFile(mdPath, 'utf-8');
     return { type: 'success', data: content };
