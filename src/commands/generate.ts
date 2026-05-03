@@ -8,6 +8,7 @@ import { renderPrompt } from '../ai/prompts.js';
 import { toolDefinitions, executeToolCall } from '../ai/tools.js';
 import type { WikiCliConfig } from '../config/config-store.js';
 import { ensureDir, writeTextFile, moveDir, getTimestamp, toSlug, removeDir } from '../utils/file.js';
+import { resolveWorkDir } from '../utils/workspace.js';
 import chalk from 'chalk';
 import { logInfo, logSuccess, logWarning, logError, logToolCall, logToolResult } from '../utils/progress.js';
 
@@ -23,7 +24,29 @@ interface Topic {
   isGroup?: boolean;
 }
 
-export async function generateCommand(): Promise<void> {
+export interface GenerateOptions {
+  dir?: string;
+  url?: string;
+  output?: string;
+  branch?: string;
+  depth?: number;
+  temp?: boolean;
+  parallel?: boolean;
+  concurrency?: number;
+  retry?: number;
+  silent?: boolean;
+}
+
+export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
+  const { cleanup } = await resolveWorkDir({
+    dir: opts.dir,
+    url: opts.url,
+    output: opts.output,
+    branch: opts.branch,
+    depth: opts.depth,
+    temp: opts.temp,
+  });
+
   const config = await loadConfig();
   if (!config) {
     logError('No configuration found. Run "wiki-cli config" first.');
@@ -33,20 +56,21 @@ export async function generateCommand(): Promise<void> {
   const workDir = resolve(process.cwd());
 
   if (existsSync(TEMP_DIR)) {
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'Previous generation temp data found. What do you want to do?',
-        choices: [
-          { name: '🔄 Resume from last checkpoint', value: 'resume' },
-          { name: '🗑️  Discard and start fresh', value: 'fresh' },
-        ],
-      },
-    ]);
-
-    if (action === 'fresh') {
+    if (opts.silent) {
       await removeDir(TEMP_DIR);
+    } else {
+      const { action } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'Previous generation temp data found. What do you want to do?',
+          choices: [
+            { name: '🔄 Resume from last checkpoint', value: 'resume' },
+            { name: '🗑️  Discard and start fresh', value: 'fresh' },
+          ],
+        },
+      ]);
+      if (action === 'fresh') await removeDir(TEMP_DIR);
     }
   }
 
@@ -56,71 +80,85 @@ export async function generateCommand(): Promise<void> {
 
   const client = new LLMClient(config);
 
-  // Phase 1: Generate outline
   logInfo('Phase 1: Analyzing repository and generating outline...');
   const topics = await generateOutline(client, config, workDir);
-
   if (topics.length === 0) {
     logError('Failed to generate outline. No topics found.');
     process.exit(1);
   }
-
   logSuccess(`Generated ${topics.length} topics.`);
 
-  // Ask about parallel generation
-  const { parallel, concurrency } = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'parallel',
-      message: 'Generate pages in parallel? (faster, no streaming output)',
-      default: false,
-    },
-    {
-      type: 'number',
-      name: 'concurrency',
-      message: 'Number of concurrent page generations:',
-      default: 3,
-      when: (answers: any) => answers.parallel,
-      validate: (input: any) => (input as number) > 0 && (input as number) <= 10 ? true : 'Enter a number between 1 and 10',
-    },
-  ]);
+  let parallel: boolean;
+  let concurrency: number;
 
-  // Phase 2: Generate pages
-  logInfo('Phase 2: Generating Wiki pages...');
-  const failed = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3 });
-
-  while (failed.length > 0) {
-    logWarning(`${failed.length} page(s) failed to generate.`);
-    const { retry } = await inquirer.prompt([
+  if (opts.silent) {
+    parallel = opts.parallel || false;
+    concurrency = opts.concurrency || 3;
+  } else if (opts.parallel !== undefined) {
+    parallel = opts.parallel;
+    concurrency = opts.concurrency || 3;
+  } else {
+    const answers = await inquirer.prompt([
       {
         type: 'confirm',
-        name: 'retry',
-        message: 'Retry failed pages?',
-        default: true,
+        name: 'parallel',
+        message: 'Generate pages in parallel? (faster, no streaming output)',
+        default: false,
+      },
+      {
+        type: 'number',
+        name: 'concurrency',
+        message: 'Number of concurrent page generations:',
+        default: 3,
+        when: (a: any) => a.parallel,
+        validate: (i: any) => (i as number) > 0 && (i as number) <= 10 ? true : 'Enter 1-10',
       },
     ]);
+    parallel = answers.parallel;
+    concurrency = answers.concurrency || 3;
+  }
 
-    if (!retry) break;
+  logInfo('Phase 2: Generating Wiki pages...');
+  let failed = await generatePages(client, config, workDir, topics, { parallel, concurrency });
 
-    logInfo(`Retrying ${failed.length} page(s)...`);
-    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency: concurrency || 3, retryList: [...failed] });
-    failed.length = 0;
-    failed.push(...retryResult);
+  let retriesLeft = opts.retry ?? 0;
+  while (failed.length > 0 && retriesLeft > 0) {
+    logWarning(`${failed.length} page(s) failed. Retrying (${retriesLeft} left)...`);
+    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency, retryList: [...failed] });
+    failed = retryResult;
+    retriesLeft--;
+  }
+
+  if (!opts.silent) {
+    while (failed.length > 0) {
+      logWarning(`${failed.length} page(s) failed to generate.`);
+      const { retry } = await inquirer.prompt([
+        { type: 'confirm', name: 'retry', message: 'Retry failed pages?', default: true },
+      ]);
+      if (!retry) break;
+      logInfo(`Retrying ${failed.length} page(s)...`);
+      const r = await generatePages(client, config, workDir, topics, { parallel, concurrency, retryList: [...failed] });
+      failed = r;
+    }
   }
 
   if (failed.length > 0) {
     logWarning(`${failed.length} page(s) were not generated successfully.`);
   }
 
-  // Finalize: Move temp to timestamped directory
   const timestamp = getTimestamp();
   const finalDir = join('.wiki', timestamp);
   await moveDir(TEMP_DIR, finalDir);
   logSuccess(`Wiki generated at ${finalDir}`);
 
-  // Generate index
   await generateIndex(finalDir, topics);
   logSuccess('Index file generated.');
+
+  if (opts.silent) {
+    console.log(`Result: ${topics.filter(t => !t.isGroup).length} pages, ${failed.length} failed`);
+  }
+
+  if (cleanup) await cleanup();
 }
 
 async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir: string): Promise<Topic[]> {

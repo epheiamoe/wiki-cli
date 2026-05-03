@@ -12,16 +12,34 @@ import {
   printSession, showSessionsTable
 } from '../ai/ai-session.js';
 import type { Session } from '../ai/ai-session.js';
+import { resolveWorkDir } from '../utils/workspace.js';
 import chalk from 'chalk';
 import { logInfo, logSuccess, logWarning, logError } from '../utils/progress.js';
 
-export async function aiCommand(options: {
+export interface AiOptions {
   question?: string;
+  dir?: string;
+  url?: string;
+  output?: string;
+  branch?: string;
+  depth?: number;
+  temp?: boolean;
   session?: string;
   listSessions?: boolean;
   deleteSession?: string;
   answerOnly?: boolean;
-}): Promise<void> {
+}
+
+export async function aiCommand(options: AiOptions = {}): Promise<void> {
+  const { cleanup } = await resolveWorkDir({
+    dir: options.dir,
+    url: options.url,
+    output: options.output,
+    branch: options.branch,
+    depth: options.depth,
+    temp: options.temp,
+  });
+
   const config = await loadConfig();
   if (!config) {
     logError('No configuration found. Run "wiki-cli config" first.');
@@ -121,6 +139,7 @@ export async function aiCommand(options: {
     session.messages = messages.slice(1);
     session.summary = options.question.slice(0, 60);
     await saveSession(session);
+    if (cleanup) await cleanup();
     return;
   }
 
@@ -133,6 +152,7 @@ export async function aiCommand(options: {
   }
 
   await interactiveLoop(client, messages, allToolDefs, session);
+  if (cleanup) await cleanup();
 }
 
 async function chatOnce(

@@ -32,10 +32,31 @@ program
 
 program
   .command('generate')
-  .description('Analyze current repository and generate Wiki documentation')
-  .action(async () => {
+  .description('Analyze repository and generate Wiki documentation')
+  .option('-C, --dir <path>', 'Local repository directory (default: current directory)')
+  .option('-u, --url <url>', 'Git repository URL to clone and generate')
+  .option('-o, --output <path>', 'Clone destination path (with --url)')
+  .option('-b, --branch <name>', 'Git branch (with --url)')
+  .option('-d, --depth <n>', 'Git clone depth (with --url)')
+  .option('-t, --temp', 'Temporary mode: clean up clone after done (with --url)')
+  .option('-p, --parallel', 'Generate pages in parallel')
+  .option('-c, --concurrency <n>', 'Number of concurrent page generations', '3')
+  .option('-r, --retry <n>', 'Retry failed pages up to N times', '0')
+  .option('-s, --silent', 'Silent mode: no interactive prompts, summary only')
+  .action(async (options) => {
     try {
-      await generateCommand();
+      await generateCommand({
+        dir: options.dir,
+        url: options.url,
+        output: options.output,
+        branch: options.branch,
+        depth: options.depth ? parseInt(options.depth) : undefined,
+        temp: options.temp,
+        parallel: options.parallel,
+        concurrency: options.concurrency ? parseInt(options.concurrency) : 3,
+        retry: options.retry ? parseInt(options.retry) : 0,
+        silent: options.silent,
+      });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
@@ -59,14 +80,32 @@ program
   .description('Interactive AI chat about the codebase')
   .argument('[question]', 'Optional question for single-answer mode')
   .option('-q, --question <text>', 'Question for single-answer mode')
+  .option('-C, --dir <path>', 'Local repository directory (default: current directory)')
+  .option('-u, --url <url>', 'Git repository URL to clone')
+  .option('-o, --output <path>', 'Clone destination path (with --url)')
+  .option('-b, --branch <name>', 'Git branch (with --url)')
+  .option('-d, --depth <n>', 'Git clone depth (with --url)')
+  .option('-t, --temp', 'Temporary mode: clean up clone after done (with --url)')
   .option('--session <id>', 'Resume a specific session')
   .option('--list-sessions', 'List all saved sessions')
   .option('--delete-session <id>', 'Delete a session')
-  .option('--answer-only', 'Output only the final answer (no streaming, no thinking)')
+  .option('-a, --answer-only', 'Output only the final answer (no streaming, no thinking)')
   .action(async (question, options) => {
     try {
       const q = options.question || question;
-      await aiCommand({ question: q, session: options.session, listSessions: options.listSessions, deleteSession: options.deleteSession, answerOnly: options.answerOnly });
+      await aiCommand({
+        question: q,
+        dir: options.dir,
+        url: options.url,
+        output: options.output,
+        branch: options.branch,
+        depth: options.depth ? parseInt(options.depth) : undefined,
+        temp: options.temp,
+        session: options.session,
+        listSessions: options.listSessions,
+        deleteSession: options.deleteSession,
+        answerOnly: options.answerOnly,
+      });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
