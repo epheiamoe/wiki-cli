@@ -133,6 +133,32 @@ export const toolDefinitions: ToolDefinition[] = [
         required: []
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_wiki_pages',
+      description: 'List all available Wiki pages with their slugs',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_wiki',
+      description: 'Read a Wiki page by slug',
+      parameters: {
+        type: 'object',
+        properties: {
+          slug: { type: 'string', description: 'The page slug (without .md extension)' }
+        },
+        required: ['slug']
+      }
+    }
   }
 ];
 
@@ -314,6 +340,72 @@ async function dotenvTemplate(): Promise<ToolResult> {
   }
 }
 
+const WIKI_DIR = '.wiki';
+
+async function findLatestWikiDir(): Promise<string | null> {
+  try {
+    if (!existsSync(WIKI_DIR)) return null;
+    const entries = await readdir(WIKI_DIR, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory() && e.name !== 'temp')
+      .map(e => e.name)
+      .sort()
+      .reverse();
+    return dirs.length > 0 ? join(WIKI_DIR, dirs[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function listWikiPages(): Promise<ToolResult> {
+  try {
+    const wikiPath = await findLatestWikiDir();
+    if (!wikiPath) return { type: 'error', data: 'No wiki found. Run wiki-cli generate first.' };
+
+    // Try index.json first
+    const jsonPath = join(wikiPath, 'index.json');
+    if (existsSync(jsonPath)) {
+      const raw = await readFile(jsonPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      const pages: string[] = [];
+      for (const section of parsed.sections || []) {
+        for (const topic of section.topics || []) {
+          if (topic.type !== 'group' && topic.title) {
+            const slug = topic.title.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+            pages.push(`- ${slug}.md | 标题: ${topic.title} | 章节: ${section.name || ''} | 难度: ${topic.level || '中级'}`);
+          }
+        }
+      }
+      return { type: 'success', data: pages };
+    }
+
+    // Fallback: scan .md files
+    const files = await readdir(wikiPath);
+    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'index.md').map(f => `- ${f}`);
+    return { type: 'success', data: mdFiles.length > 0 ? mdFiles : ['No wiki pages found'] };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function readWiki(slug: string): Promise<ToolResult> {
+  try {
+    if (!slug || typeof slug !== 'string') {
+      return { type: 'error', data: 'slug is required' };
+    }
+    const wikiPath = await findLatestWikiDir();
+    if (!wikiPath) return { type: 'error', data: 'No wiki found. Run wiki-cli generate first.' };
+
+    const mdPath = join(wikiPath, `${slug.replace(/\.md$/, '')}.md`);
+    if (!existsSync(mdPath)) return { type: 'error', data: `Page not found: ${slug}.md` };
+
+    const content = await readFile(mdPath, 'utf-8');
+    return { type: 'success', data: content };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
 const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   list_directory: (args) => listDirectory(args.dir_path, args.max_depth),
   list_files: (args) => listFiles(args.path, args.extensions),
@@ -322,7 +414,9 @@ const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   git_log: (args) => gitLog(args.max_count, args.path),
   git_show: (args) => gitShow(args.object, args.path),
   git_remote_info: () => gitRemoteInfo(),
-  dotenv_template: () => dotenvTemplate()
+  dotenv_template: () => dotenvTemplate(),
+  list_wiki_pages: () => listWikiPages(),
+  read_wiki: (args) => readWiki(args.slug)
 };
 
 export async function executeToolCall(name: string, args: any): Promise<ToolResult> {

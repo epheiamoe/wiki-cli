@@ -15,8 +15,8 @@ describe('toolDefinitions', () => {
     expect(Array.isArray(toolDefinitions)).toBe(true);
   });
 
-  it('should have all 8 tools', () => {
-    expect(toolDefinitions.length).toBe(8);
+  it('should have all 10 tools', () => {
+    expect(toolDefinitions.length).toBe(10);
   });
 
   it('should include list_directory', () => {
@@ -29,6 +29,8 @@ describe('toolDefinitions', () => {
     expect(names).toContain('git_show');
     expect(names).toContain('git_remote_info');
     expect(names).toContain('dotenv_template');
+    expect(names).toContain('list_wiki_pages');
+    expect(names).toContain('read_wiki');
   });
 
   it('each tool should have valid schema with type "object"', () => {

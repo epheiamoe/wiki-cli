@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { configCommand } from './commands/config.js';
 import { generateCommand } from './commands/generate.js';
 import { browseCommand } from './commands/browse.js';
-import { loadConfig } from './config/config-store.js';
+import { aiCommand } from './commands/ai.js';
 import { logError } from './utils/progress.js';
 
 const program = new Command();
@@ -36,7 +36,6 @@ program
   .action(async () => {
     try {
       await generateCommand();
-      process.exit(0);
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
@@ -49,6 +48,22 @@ program
   .action(async () => {
     try {
       await browseCommand();
+    } catch (err: any) {
+      logError(err.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('ai')
+  .description('Interactive AI chat about the codebase')
+  .argument('[question]', 'Optional question for single-answer mode')
+  .option('--session <id>', 'Resume a specific session')
+  .option('--list-sessions', 'List all saved sessions')
+  .option('--delete-session <id>', 'Delete a session')
+  .action(async (question, options) => {
+    try {
+      await aiCommand({ question, ...options });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
