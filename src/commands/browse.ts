@@ -127,8 +127,14 @@ body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMac
 .header a:hover { text-decoration: underline; }
 .header span { color: #8b949e; font-size: 13px; }
 .header .path { color: #f0f6fc; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
-pre { padding: 20px 24px; overflow-x: auto; margin: 0; }
-pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+pre { padding: 0; overflow-x: auto; margin: 0; }
+pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; padding: 0; }
+.line { display: flex; padding: 0 16px 0 0; }
+.line:hover { background: rgba(255,255,255,0.02); }
+.line-num { width: 60px; text-align: right; padding-right: 16px; color: #484f58; user-select: none; flex-shrink: 0; font-size: 12px; }
+.line-code { flex: 1; white-space: pre; padding: 0 16px; }
+.line.hl { background: rgba(88,166,255,0.08); border-left: 3px solid rgba(88,166,255,0.3); }
+.line.hl .line-num { color: #58a6ff; }
 </style>
 </head>
 <body>
@@ -140,7 +146,35 @@ pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fi
 </div>
 <pre><code class="language-${lang}">${escapeHtml(content)}</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script>hljs.highlightAll();</script>
+<script>
+hljs.highlightAll();
+
+// Add line numbers and handle #Lx-Ly highlighting
+const code = document.querySelector('pre code');
+if (code) {
+  const html = code.innerHTML;
+  const lines = html.split('\n');
+  code.innerHTML = lines.map((line, i) => {
+    const num = i + 1;
+    return '<div class="line" data-line="' + num + '"><span class="line-num">' + num + '</span><span class="line-code">' + (line || ' ') + '</span></div>';
+  }).join('');
+
+  const hash = location.hash.slice(1);
+  if (hash) {
+    const m = hash.match(/^L(\d+)(?:-L(\d+))?$/);
+    if (m) {
+      const start = parseInt(m[1]);
+      const end = m[2] ? parseInt(m[2]) : start;
+      for (let i = start; i <= end; i++) {
+        const el = document.querySelector('.line[data-line="' + i + '"]');
+        if (el) el.classList.add('hl');
+      }
+      const first = document.querySelector('.line[data-line="' + start + '"]');
+      if (first) first.scrollIntoView({ block: 'center' });
+    }
+  }
+}
+</script>
 </body>
 </html>`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
