@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { execSync } from 'node:child_process';
 import { marked } from 'marked';
+import hljs from 'highlight.js';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
 
@@ -110,8 +111,23 @@ export async function browseCommand(): Promise<void> {
         }
         const content = await readFile(fullPath, 'utf-8');
         const ext = extname(fullPath);
-        const lang = extToLang(ext);
+        const langName = extToLang(ext);
         const fileName = pathname.slice(12);
+
+        // Server-side highlighting: split by line, highlight each, wrap in divs
+        const rawLines = content.split('\n');
+        const lineHtml = rawLines.map((raw, i) => {
+          const num = i + 1;
+          let codeHtml: string;
+          if (raw.length > 0) {
+            const result = hljs.highlight(raw, { language: langName, ignoreIllegals: true });
+            codeHtml = result.value;
+          } else {
+            codeHtml = '&nbsp;';
+          }
+          return `<div class="line" data-line="${num}"><span class="line-num">${num}</span><span class="line-code">${codeHtml}</span></div>`;
+        }).join('\n');
+
         const sourceHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -127,8 +143,7 @@ body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMac
 .header a:hover { text-decoration: underline; }
 .header span { color: #8b949e; font-size: 13px; }
 .header .path { color: #f0f6fc; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
-pre { padding: 16px 0; overflow-x: auto; margin: 0; }
-pre code { font-size: 13px; line-height: 1.7; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; padding: 0; }
+pre { padding: 16px 0; overflow-x: auto; margin: 0; font-size: 13px; line-height: 1.7; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
 .line { display: flex; padding: 0 24px; }
 .line:hover { background: rgba(255,255,255,0.03); }
 .line-num { width: 56px; text-align: right; padding-right: 16px; color: #484f58; user-select: none; flex-shrink: 0; font-size: 12px; line-height: 1.7; }
@@ -142,57 +157,23 @@ pre code { font-size: 13px; line-height: 1.7; font-family: 'JetBrains Mono', 'Fi
   <a onclick="window.close(); return false;" href="#">← Wiki</a>
   <span>|</span>
   <span class="path">${escapeHtml(fileName)}</span>
-  <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${lang}</span>
+  <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${langName}</span>
 </div>
-<pre><code class="language-${lang}">${escapeHtml(content)}</code></pre>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<pre>${lineHtml}</pre>
 <script>
-const lang = '${lang}';
-const code = document.querySelector('pre code');
-const text = code.textContent;
-const rawLines = text.split('\n');
-code.innerHTML = '';
-
-rawLines.forEach(function(raw, i) {
-  var line = document.createElement('div');
-  line.className = 'line';
-  line.setAttribute('data-line', i + 1);
-
-  var num = document.createElement('span');
-  num.className = 'line-num';
-  num.textContent = i + 1;
-
-  var codeSpan = document.createElement('span');
-  codeSpan.className = 'line-code';
-  if (raw.length > 0) {
-    var tmp = document.createElement('code');
-    tmp.className = 'language-' + lang;
-    tmp.textContent = raw;
-    hljs.highlightElement(tmp);
-    codeSpan.innerHTML = tmp.innerHTML;
-  } else {
-    codeSpan.innerHTML = '&nbsp;';
+(function(){
+  var h = location.hash.slice(1);
+  if (!h) return;
+  var m = h.match(/^L(\d+)(?:-L(\d+))?$/);
+  if (!m) return;
+  var s = parseInt(m[1], 10), e = m[2] ? parseInt(m[2], 10) : s;
+  for (var i = s; i <= e; i++) {
+    var el = document.querySelector('.line[data-line="' + i + '"]');
+    if (el) el.classList.add('hl');
   }
-
-  line.appendChild(num);
-  line.appendChild(codeSpan);
-  code.appendChild(line);
-});
-
-var hash = location.hash.slice(1);
-if (hash) {
-  var m = hash.match(/^L(\d+)(?:-L(\d+))?$/);
-  if (m) {
-    var start = parseInt(m[1]);
-    var end = m[2] ? parseInt(m[2]) : start;
-    for (var i = start; i <= end; i++) {
-      var el = document.querySelector('.line[data-line="' + i + '"]');
-      if (el) el.classList.add('hl');
-    }
-    var first = document.querySelector('.line[data-line="' + start + '"]');
-    if (first) first.scrollIntoView({ block: 'center' });
-  }
-}
+  var first = document.querySelector('.line[data-line="' + s + '"]');
+  if (first) first.scrollIntoView({ block: 'center' });
+})();
 </script>
 </body>
 </html>`;
