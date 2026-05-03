@@ -30,11 +30,8 @@ export async function browseCommand(): Promise<void> {
   }
 
   const latest = timestamps[0];
-  const wikiPath = join(wikiDir, latest);
   logInfo(`Browsing Wiki: ${latest}`);
-
-  const sidebarItems = await loadSidebar(wikiPath);
-  const firstPage = sidebarItems.length > 0 ? join(wikiPath, `${sidebarItems[0].slug}.md`) : null;
+  const allVersions = timestamps;
 
   const port = await findFreePort(3000);
 
@@ -48,13 +45,36 @@ export async function browseCommand(): Promise<void> {
     '.svg': 'image/svg+xml',
   };
 
+  function getVersionFromUrl(reqUrl: string): string {
+    try {
+      const u = new URL(reqUrl, `http://localhost:${port}`);
+      return u.searchParams.get('version') || latest;
+    } catch {
+      return latest;
+    }
+  }
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url || '/', `http://localhost:${port}`);
       const pathname = url.pathname;
+      const version = url.searchParams.get('version') || latest;
+      const wikiPath = join(wikiDir, version);
 
       if (pathname === '/') {
-        await serveHtml(res, wikiPath, sidebarItems, firstPage);
+        const sidebarItems = await loadSidebar(wikiPath);
+        const firstPage = sidebarItems.length > 0 ? join(wikiPath, `${sidebarItems[0].slug}.md`) : null;
+        await serveHtml(res, wikiPath, sidebarItems, firstPage, allVersions, version);
+        return;
+      }
+
+      if (pathname === '/api/versions') {
+        const list = allVersions.map(v => ({
+          ts: v,
+          current: v === version,
+        }));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(list));
         return;
       }
 
@@ -113,7 +133,7 @@ pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fi
 </head>
 <body>
 <div class="header">
-  <a href="/">← Wiki</a>
+  <a href="/?version=${version}">← Wiki</a>
   <span>|</span>
   <span class="path">${escapeHtml(fileName)}</span>
   <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${lang}</span>
@@ -128,10 +148,9 @@ pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fi
         return;
       }
 
-      // Redirect .md requests to the API route
       if (pathname.endsWith('.md') && !pathname.startsWith('/api/')) {
         const slug = pathname.replace(/\.md$/, '').replace(/^\//, '');
-        res.writeHead(302, { Location: '/api/page/' + encodeURIComponent(slug) + '.md' });
+        res.writeHead(302, { Location: '/api/page/' + encodeURIComponent(slug) + '.md' + '?version=' + encodeURIComponent(version) });
         res.end();
         return;
       }
@@ -176,18 +195,16 @@ interface SidebarItem {
 }
 
 async function loadSidebar(wikiPath: string): Promise<SidebarItem[]> {
-  // Try index.json first (new format)
   const jsonPath = join(wikiPath, 'index.json');
   if (existsSync(jsonPath)) {
     try {
       const content = await readFile(jsonPath, 'utf-8');
       return parseIndexJson(content);
     } catch {
-      // fall through to XML fallback
+      // fall through
     }
   }
 
-  // Fallback: try index.md with XML format (legacy)
   const mdPath = join(wikiPath, 'index.md');
   if (existsSync(mdPath)) {
     try {
@@ -198,7 +215,6 @@ async function loadSidebar(wikiPath: string): Promise<SidebarItem[]> {
     }
   }
 
-  // Last resort: scan .md files
   return [];
 }
 
@@ -208,32 +224,21 @@ function parseIndexJson(content: string): SidebarItem[] {
   if (!jsonMatch) return [];
 
   let parsed: any;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch {
-    return [];
-  }
+  try { parsed = JSON.parse(jsonMatch[0]); } catch { return []; }
 
   if (!parsed.sections || !Array.isArray(parsed.sections)) return [];
 
   const items: SidebarItem[] = [];
-
   for (const section of parsed.sections) {
     if (!section.topics || !Array.isArray(section.topics)) continue;
-
     for (const topic of section.topics) {
       if (topic.type === 'group') {
         items.push({ title: topic.title, slug: '', level: 'group' });
       } else if (topic.title) {
-        items.push({
-          title: topic.title,
-          slug: slugify(topic.title),
-          level: topic.level || '中级',
-        });
+        items.push({ title: topic.title, slug: slugify(topic.title), level: topic.level || '中级' });
       }
     }
   }
-
   return items;
 }
 
@@ -241,42 +246,29 @@ function parseIndexXml(content: string): SidebarItem[] {
   const items: SidebarItem[] = [];
   const lines = content.split('\n');
   let inSection = false;
-
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-
-    if (trimmed.startsWith('<section>')) {
-      inSection = true;
-      continue;
-    }
-    if (trimmed.startsWith('</section>')) {
-      inSection = false;
-      continue;
-    }
+    if (trimmed.startsWith('<section>')) { inSection = true; continue; }
+    if (trimmed.startsWith('</section>')) { inSection = false; continue; }
     if (!inSection) continue;
-
     const topicMatch = trimmed.match(/<topic\s+level="([^"]*)"[^>]*>([^<]*)<\/topic>/);
     if (topicMatch) {
       items.push({ title: topicMatch[2], slug: slugify(topicMatch[2]), level: topicMatch[1] });
       continue;
     }
-
     const groupMatch = trimmed.match(/<group>([^<]*)<\/group>/);
     if (groupMatch) {
       items.push({ title: groupMatch[1], slug: '', level: 'group' });
     }
   }
-
   return items;
 }
 
 function sanitizePath(rawPath: string): string | null {
   const normalized = normalize(rawPath).replace(/^(\.\.(\/|\\))+/g, '');
   const resolved = resolve(PROJECT_ROOT, normalized);
-  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) {
-    return null;
-  }
+  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) return null;
   return normalized;
 }
 
@@ -294,10 +286,7 @@ function escapeHtml(text: string): string {
 }
 
 function fixContentReferences(html: string): string {
-  return html.replace(
-    /\[来源：([^\]]+)\]/g,
-    '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>'
-  );
+  return html.replace(/\[来源：([^\]]+)\]/g, '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>');
 }
 
 function slugify(title: string): string {
@@ -306,13 +295,17 @@ function slugify(title: string): string {
 
 function buildSidebarHtml(items: SidebarItem[]): string {
   const parts = items.map(item => {
-    if (item.level === 'group') {
-      return `<li class="nav-group">${item.title}</li>`;
-    }
+    if (item.level === 'group') return `<li class="nav-group">${item.title}</li>`;
     const badge = item.level === '初学' ? '🟢' : item.level === '中级' ? '🟡' : '🔴';
     return `<li><a href="#" onclick="loadPage('${encodeURIComponent(item.slug)}')">${badge} ${item.title}</a></li>`;
   });
   return parts.join('\n');
+}
+
+function buildVersionsHtml(versions: string[], current: string): string {
+  return versions.map(v =>
+    `<a href="#" class="${v === current ? 'current' : ''}" onclick="switchVersion('${v}')">${v}</a>`
+  ).join('');
 }
 
 async function findFreePort(preferred: number): Promise<number> {
@@ -326,13 +319,18 @@ async function findFreePort(preferred: number): Promise<number> {
         srv.close(() => resolve(preferred));
       }
     });
-    srv.on('error', () => {
-      resolve(findFreePort(preferred + 1));
-    });
+    srv.on('error', () => resolve(findFreePort(preferred + 1)));
   });
 }
 
-async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: SidebarItem[], firstPage: string | null): Promise<void> {
+async function serveHtml(
+  res: ServerResponse,
+  wikiPath: string,
+  sidebarItems: SidebarItem[],
+  firstPage: string | null,
+  allVersions: string[],
+  currentVersion: string
+): Promise<void> {
   let firstContent = '';
   if (firstPage && existsSync(firstPage)) {
     const md = await readFile(firstPage, 'utf-8');
@@ -340,6 +338,7 @@ async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: Si
   }
 
   const sidebarHtml = buildSidebarHtml(sidebarItems);
+  const versionsHtml = buildVersionsHtml(allVersions, currentVersion);
   const slugs = sidebarItems.filter(i => i.slug).map(i => i.slug);
 
   const html = `<!DOCTYPE html>
@@ -351,10 +350,14 @@ async function serveHtml(res: ServerResponse, wikiPath: string, sidebarItems: Si
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; height: 100vh; background: #0d1117; color: #c9d1d9; }
-.sidebar { width: 280px; background: #161b22; border-right: 1px solid #30363d; padding: 20px; overflow-y: auto; flex-shrink: 0; }
-.sidebar h2 { font-size: 16px; color: #58a6ff; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
-.sidebar ul { list-style: none; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; height: 100vh; background: #0d1117; color: #c9d1d9; justify-content: center; }
+.wrapper { display: flex; width: 100%; max-width: 1280px; }
+.sidebar { width: 280px; background: #161b22; border-right: 1px solid #30363d; padding: 20px; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
+.sidebar-header h2 { font-size: 16px; color: #58a6ff; }
+.sidebar-header .version-btn { font-size: 12px; color: #8b949e; cursor: pointer; padding: 2px 8px; border-radius: 4px; border: 1px solid #30363d; background: none; }
+.sidebar-header .version-btn:hover { color: #58a6ff; border-color: #58a6ff; }
+.sidebar ul { list-style: none; flex: 1; }
 .sidebar li { margin-bottom: 4px; }
 .sidebar a { color: #8b949e; text-decoration: none; font-size: 14px; display: block; padding: 4px 8px; border-radius: 4px; transition: all 0.2s; cursor: pointer; }
 .sidebar a:hover { color: #58a6ff; background: #1c2333; }
@@ -376,26 +379,60 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .content blockquote { border-left: 4px solid #30363d; padding-left: 16px; color: #8b949e; margin-bottom: 16px; }
 .content ul, .content ol { margin-bottom: 16px; padding-left: 24px; }
 .content li { margin-bottom: 4px; }
+.overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
+.overlay.show { display: flex; }
+.overlay-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; min-width: 360px; max-height: 80vh; overflow-y: auto; }
+.overlay-box h3 { color: #f0f6fc; font-size: 16px; margin-bottom: 16px; }
+.overlay-box a { display: block; color: #8b949e; text-decoration: none; padding: 8px 12px; border-radius: 4px; font-size: 14px; margin-bottom: 4px; transition: all 0.2s; }
+.overlay-box a:hover { color: #58a6ff; background: #1c2333; }
+.overlay-box a.current { color: #58a6ff; background: #1c2333; font-weight: 600; }
+.overlay-box .close-btn { float: right; color: #8b949e; cursor: pointer; font-size: 18px; padding: 0 4px; }
+.overlay-box .close-btn:hover { color: #f0f6fc; }
 </style>
 </head>
 <body>
+<div class="wrapper">
 <div class="sidebar">
-  <h2>📖 Wiki</h2>
+  <div class="sidebar-header">
+    <h2>📖 Wiki</h2>
+    <button class="version-btn" onclick="showVersions()">历史版本</button>
+  </div>
   <ul>${sidebarHtml}</ul>
 </div>
 <div class="content" id="content">${firstContent}</div>
+</div>
+<div class="overlay" id="versionOverlay" onclick="if(event.target===this)hideVersions()">
+  <div class="overlay-box">
+    <span class="close-btn" onclick="hideVersions()">✕</span>
+    <h3>历史版本</h3>
+    ${versionsHtml}
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
+const currentVersion = ${JSON.stringify(currentVersion)};
 const wikiSlugs = ${JSON.stringify(slugs)};
 
 async function loadPage(encodedSlug) {
   const slug = decodeURIComponent(encodedSlug);
-  const res = await fetch('/api/page/' + slug + '.md');
+  const res = await fetch('/api/page/' + slug + '.md?version=' + currentVersion);
   const html = await res.text();
   document.getElementById('content').innerHTML = html;
   document.getElementById('content').scrollTop = 0;
   hljs.highlightAll();
   history.replaceState(null, '', '#' + slug);
+}
+
+function switchVersion(ts) {
+  window.location.href = '/?version=' + ts;
+}
+
+function showVersions() {
+  document.getElementById('versionOverlay').classList.add('show');
+}
+
+function hideVersions() {
+  document.getElementById('versionOverlay').classList.remove('show');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -405,6 +442,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const slug = decodeURIComponent(location.hash.slice(1));
     loadPage(slug);
   }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') hideVersions();
+  });
 
   document.getElementById('content').addEventListener('click', function(e) {
     const anchor = e.target.closest('a');
