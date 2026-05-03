@@ -143,12 +143,13 @@ body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMac
 .header a:hover { text-decoration: underline; }
 .header span { color: #8b949e; font-size: 13px; }
 .header .path { color: #f0f6fc; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
-pre { padding: 16px 0; overflow-x: auto; margin: 0; font-size: 13px; line-height: 1.4; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+pre { padding: 16px 0; overflow-x: auto; margin: 0; font-size: 13px; line-height: 1; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
 .line { display: flex; padding: 0 24px; }
 .line:hover { background: rgba(255,255,255,0.03); }
-.line-num { width: 56px; text-align: right; padding-right: 16px; color: #484f58; user-select: none; flex-shrink: 0; font-size: 12px; line-height: 1.4; }
-.line-code { flex: 1; line-height: 1.4; }
-.line.hl { background: rgba(88,166,255,0.07); border-left: 2px solid rgba(88,166,255,0.35); margin-left: -1px; }
+.line-num { width: 56px; text-align: right; padding-right: 16px; color: #484f58; user-select: none; flex-shrink: 0; font-size: 12px; line-height: inherit; }
+.line-code { flex: 1; line-height: inherit; }
+.line.hl { background: rgba(88,166,255,0.08); border-left: 2px solid #58a6ff; }
+.line.hl .line-num { color: #58a6ff; font-weight: 600; }
 .line.hl .line-num { color: #58a6ff; }
 </style>
 </head>
@@ -168,8 +169,8 @@ document.addEventListener('DOMContentLoaded', function(){
   if (!m) return;
   var s = parseInt(m[1], 10), e = m[2] ? parseInt(m[2], 10) : s;
   var target;
-  for (var i = s; i <= e; i++) {
-    var el = document.querySelector('.line[data-line="' + i + '"]');
+  for (var i = Math.max(1, s); i <= e; i++) {
+    var el = document.querySelector('[data-line="' + i + '"]');
     if (el) { el.classList.add('hl'); if (!target) target = el; }
   }
   if (target) target.scrollIntoView({ block: 'center' });
