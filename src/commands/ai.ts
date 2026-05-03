@@ -201,7 +201,7 @@ async function chatOnce(
     });
 
     if (toolCalls.length > 0) {
-      process.stdout.write('\n');
+      console.log();
     }
 
     for (const tc of toolCalls) {

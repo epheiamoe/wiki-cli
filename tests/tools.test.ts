@@ -118,4 +118,20 @@ describe('executeToolCall', () => {
     expect(result.type).toBe('error');
     expect(result.data).toContain('path');
   });
+
+  it('list_wiki_pages should return a result without crashing', async () => {
+    const result = await executeToolCall('list_wiki_pages', {});
+    expect(['success', 'error']).toContain(result.type);
+  });
+
+  it('read_wiki should return error when slug is missing', async () => {
+    const result = await executeToolCall('read_wiki', {});
+    expect(result.type).toBe('error');
+    expect(result.data).toContain('slug');
+  });
+
+  it('read_wiki should handle nonexistent page gracefully', async () => {
+    const result = await executeToolCall('read_wiki', { slug: 'nonexistent_page_xyz' });
+    expect(['success', 'error']).toContain(result.type);
+  });
 });

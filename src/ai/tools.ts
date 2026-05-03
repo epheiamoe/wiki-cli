@@ -347,7 +347,7 @@ async function findLatestWikiDir(): Promise<string | null> {
     if (!existsSync(WIKI_DIR)) return null;
     const entries = await readdir(WIKI_DIR, { withFileTypes: true });
     const dirs = entries
-      .filter(e => e.isDirectory() && e.name !== 'temp')
+      .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
       .map(e => e.name)
       .sort()
       .reverse();
