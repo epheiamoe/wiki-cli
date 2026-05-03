@@ -2,6 +2,7 @@ import { readFile, writeFile, readdir, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import chalk from 'chalk';
 import type { ChatMessage } from './llm-client.js';
 
 export interface Session {
@@ -80,13 +81,10 @@ export function printSession(session: Session): void {
     if (msg.role === 'user') {
       const text = msg.content || '';
       if (!text.startsWith('/')) {
-        console.log(`\n  ${'─'.repeat(50)}`);
-        console.log(`  You > ${text}`);
+        console.log(`\n${chalk.green('You >')} ${text}`);
       }
     } else if (msg.role === 'assistant') {
-      const text = msg.content || '';
-      const preview = text.length > 200 ? text.slice(0, 200) + '...' : text;
-      console.log(`  AI  > ${preview}`);
+      console.log(`${msg.content || ''}`);
     }
   }
 }

@@ -94,6 +94,7 @@ export async function aiCommand(options: {
 
   let session: Session;
   let messages: ChatMessage[];
+  let restoredSession: Session | null = null;
 
   if (options.session) {
     const existing = await loadSession(options.session);
@@ -102,11 +103,8 @@ export async function aiCommand(options: {
       return;
     }
     session = existing;
+    restoredSession = existing;
     messages = [{ role: 'system', content: systemPrompt }, ...session.messages.slice(1)];
-
-    // Print history
-    logInfo(`恢复会话 ${chalk.cyan(session.id)} (${session.summary})`);
-    printSession(existing);
   } else {
     session = await createSession();
     messages = [{ role: 'system', content: systemPrompt }];
@@ -121,6 +119,13 @@ export async function aiCommand(options: {
   }
 
   console.log(chalk.cyan('\n💬 AI 问答模式（输入 /help 查看命令）\n'));
+
+  if (restoredSession) {
+    console.log(chalk.dim(`↳ 恢复会话 ${restoredSession.id}: ${restoredSession.summary}\n`));
+    printSession(restoredSession);
+    console.log('');
+  }
+
   await interactiveLoop(client, messages, allToolDefs, session);
 }
 
