@@ -91,9 +91,40 @@ export async function browseCommand(): Promise<void> {
         const content = await readFile(fullPath, 'utf-8');
         const ext = extname(fullPath);
         const lang = extToLang(ext);
-        const html = `<pre><code class="language-${lang}">${escapeHtml(content)}</code></pre>`;
+        const fileName = pathname.slice(12);
+        const sourceHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(fileName)} — 源码</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.header { display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #161b22; border-bottom: 1px solid #30363d; position: sticky; top: 0; z-index: 10; }
+.header a { color: #58a6ff; text-decoration: none; font-size: 14px; }
+.header a:hover { text-decoration: underline; }
+.header span { color: #8b949e; font-size: 13px; }
+.header .path { color: #f0f6fc; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+pre { padding: 20px 24px; overflow-x: auto; margin: 0; }
+pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+</style>
+</head>
+<body>
+<div class="header">
+  <a href="/">← Wiki</a>
+  <span>|</span>
+  <span class="path">${escapeHtml(fileName)}</span>
+  <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${lang}</span>
+</div>
+<pre><code class="language-${lang}">${escapeHtml(content)}</code></pre>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        res.end(sourceHtml);
         return;
       }
 
@@ -362,6 +393,7 @@ async function loadPage(encodedSlug) {
   const res = await fetch('/api/page/' + slug + '.md');
   const html = await res.text();
   document.getElementById('content').innerHTML = html;
+  document.getElementById('content').scrollTop = 0;
   hljs.highlightAll();
   history.replaceState(null, '', '#' + slug);
 }
@@ -371,9 +403,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (location.hash) {
     const slug = decodeURIComponent(location.hash.slice(1));
-    if (wikiSlugs.includes(slug)) {
-      loadPage(slug);
-    }
+    loadPage(slug);
   }
 
   document.getElementById('content').addEventListener('click', function(e) {
