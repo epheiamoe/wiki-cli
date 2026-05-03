@@ -112,8 +112,6 @@ export async function browseCommand(): Promise<void> {
         const ext = extname(fullPath);
         const lang = extToLang(ext);
         const fileName = pathname.slice(12);
-        const fromSlug = url.searchParams.get('from') || '';
-        const backLink = fromSlug ? `/?version=${version}#${encodeURIComponent(fromSlug)}` : `/?version=${version}`;
         const sourceHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -125,7 +123,7 @@ export async function browseCommand(): Promise<void> {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 .header { display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #161b22; border-bottom: 1px solid #30363d; position: sticky; top: 0; z-index: 10; }
-.header a { color: #58a6ff; text-decoration: none; font-size: 14px; }
+.header a { color: #58a6ff; text-decoration: none; font-size: 14px; cursor: pointer; }
 .header a:hover { text-decoration: underline; }
 .header span { color: #8b949e; font-size: 13px; }
 .header .path { color: #f0f6fc; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
@@ -135,7 +133,7 @@ pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fi
 </head>
 <body>
 <div class="header">
-  <a href="${backLink}">← Wiki</a>
+  <a onclick="window.close(); return false;" href="#">← Wiki</a>
   <span>|</span>
   <span class="path">${escapeHtml(fileName)}</span>
   <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${lang}</span>
@@ -466,8 +464,7 @@ document.addEventListener('DOMContentLoaded', function() {
       loadPage(href.replace(/\\.md$/, ''));
     } else {
       const srcPath = href.startsWith('/') ? href.slice(1) : href;
-      const currentSlug = location.hash.slice(1) || wikiSlugs[0] || '';
-      window.open('/api/source/' + srcPath + '?version=' + currentVersion + '&from=' + encodeURIComponent(currentSlug), '_blank');
+      window.open('/api/source/' + srcPath, '_blank');
     }
   });
 });
