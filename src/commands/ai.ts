@@ -20,6 +20,7 @@ export async function aiCommand(options: {
   session?: string;
   listSessions?: boolean;
   deleteSession?: string;
+  answerOnly?: boolean;
 }): Promise<void> {
   const config = await loadConfig();
   if (!config) {
@@ -111,7 +112,12 @@ export async function aiCommand(options: {
   }
 
   if (options.question) {
-    await chatOnce(client, messages, allToolDefs, options.question);
+    if (options.answerOnly) {
+      const result = await answerOnly(client, messages, allToolDefs, options.question);
+      if (result) console.log(result);
+    } else {
+      await chatOnce(client, messages, allToolDefs, options.question);
+    }
     session.messages = messages.slice(1);
     session.summary = options.question.slice(0, 60);
     await saveSession(session);
@@ -215,6 +221,63 @@ async function chatOnce(
       logInfo(`Using tool: ${tc.function.name}`);
       const result = await executeToolCall(tc.function.name, args);
       messages.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) });
+    }
+  }
+
+  logError('Max iterations reached.');
+  return null;
+}
+
+async function answerOnly(
+  client: LLMClient,
+  messages: ChatMessage[],
+  tools: typeof toolDefinitions,
+  userInput: string
+): Promise<string | null> {
+  messages.push({ role: 'user', content: userInput });
+
+  const maxIterations = 50;
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    let hasToolCalls = false;
+    const toolCallsMap = new Map<string, ToolCall>();
+
+    try {
+      const response = await client.chat(messages, tools, false);
+
+      const content = response.content || '';
+      const toolCalls: ToolCall[] = (response.tool_calls || []).map((tc: any) => ({ ...tc }));
+
+      if (toolCalls.length > 0) {
+        hasToolCalls = true;
+        for (const tc of toolCalls) {
+          const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
+          toolCallsMap.set(key, tc);
+        }
+      }
+
+      if (!hasToolCalls) {
+        messages.push({ role: 'assistant', content: content || null, reasoning_content: response.reasoning_content || null });
+        return content || null;
+      }
+
+      const resolvedCalls = [...toolCallsMap.values()];
+      messages.push({
+        role: 'assistant',
+        content: content || null,
+        reasoning_content: response.reasoning_content || null,
+        tool_calls: resolvedCalls.map(tc => ({ id: tc.id, type: 'function' as const, function: tc.function })),
+      });
+
+      for (const tc of resolvedCalls) {
+        let args: any;
+        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        const result = await executeToolCall(tc.function.name, args);
+        messages.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) });
+      }
+    } catch (err: any) {
+      logError(`API error: ${err.message}`);
+      return null;
     }
   }
 

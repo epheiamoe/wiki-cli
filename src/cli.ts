@@ -58,12 +58,15 @@ program
   .command('ai')
   .description('Interactive AI chat about the codebase')
   .argument('[question]', 'Optional question for single-answer mode')
+  .option('-q, --question <text>', 'Question for single-answer mode')
   .option('--session <id>', 'Resume a specific session')
   .option('--list-sessions', 'List all saved sessions')
   .option('--delete-session <id>', 'Delete a session')
+  .option('--answer-only', 'Output only the final answer (no streaming, no thinking)')
   .action(async (question, options) => {
     try {
-      await aiCommand({ question, ...options });
+      const q = options.question || question;
+      await aiCommand({ question: q, session: options.session, listSessions: options.listSessions, deleteSession: options.deleteSession, answerOnly: options.answerOnly });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
