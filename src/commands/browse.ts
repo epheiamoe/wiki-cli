@@ -380,6 +380,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .content blockquote { border-left: 4px solid #30363d; padding-left: 16px; color: #8b949e; margin-bottom: 16px; }
 .content ul, .content ol { margin-bottom: 16px; padding-left: 24px; }
 .content li { margin-bottom: 4px; }
+.content .mermaid { text-align: center; margin: 20px 0; background: #161b22; padding: 20px; border-radius: 6px; border: 1px solid #30363d; }
 .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
 .overlay.show { display: flex; }
 .overlay-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; min-width: 360px; max-height: 80vh; overflow-y: auto; }
@@ -410,9 +411,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 const currentVersion = ${JSON.stringify(currentVersion)};
 const wikiSlugs = ${JSON.stringify(slugs)};
+
+mermaid.initialize({ startOnLoad: false, theme: 'dark' });
 
 async function loadPage(encodedSlug) {
   const slug = decodeURIComponent(encodedSlug);
@@ -421,6 +425,7 @@ async function loadPage(encodedSlug) {
   document.getElementById('content').innerHTML = html;
   document.getElementById('content').scrollTop = 0;
   hljs.highlightAll();
+  try { await mermaid.run({ nodes: document.querySelectorAll('.mermaid') }); } catch {}
   history.replaceState(null, '', '#' + slug);
 }
 
@@ -438,6 +443,7 @@ function hideVersions() {
 
 document.addEventListener('DOMContentLoaded', function() {
   hljs.highlightAll();
+  try { mermaid.run({ nodes: document.querySelectorAll('.mermaid') }); } catch {}
 
   if (location.hash) {
     const slug = decodeURIComponent(location.hash.slice(1));
