@@ -266,7 +266,8 @@ function parseIndexXml(content: string): SidebarItem[] {
 }
 
 function sanitizePath(rawPath: string): string | null {
-  const normalized = normalize(rawPath).replace(/^(\.\.(\/|\\))+/g, '');
+  const cleaned = rawPath.replace(/^[/\\]+/, '');
+  const normalized = normalize(cleaned).replace(/^(\.\.(\/|\\))+/g, '');
   const resolved = resolve(PROJECT_ROOT, normalized);
   if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) return null;
   return normalized;
@@ -456,7 +457,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (href.endsWith('.md')) {
       loadPage(href.replace(/\\.md$/, ''));
     } else {
-      window.open('/api/source/' + href, '_blank');
+      const srcPath = href.startsWith('/') ? href.slice(1) : href;
+      window.open('/api/source/' + srcPath, '_blank');
     }
   });
 });
