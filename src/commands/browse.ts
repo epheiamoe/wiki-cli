@@ -112,6 +112,8 @@ export async function browseCommand(): Promise<void> {
         const ext = extname(fullPath);
         const lang = extToLang(ext);
         const fileName = pathname.slice(12);
+        const fromSlug = url.searchParams.get('from') || '';
+        const backLink = fromSlug ? `/?version=${version}#${encodeURIComponent(fromSlug)}` : `/?version=${version}`;
         const sourceHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -133,7 +135,7 @@ pre code { font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', 'Fi
 </head>
 <body>
 <div class="header">
-  <a href="/?version=${version}">← Wiki</a>
+  <a href="${backLink}">← Wiki</a>
   <span>|</span>
   <span class="path">${escapeHtml(fileName)}</span>
   <span style="margin-left:auto;background:#1c2333;padding:2px 10px;border-radius:4px;font-size:12px;color:#8b949e">${lang}</span>
@@ -464,7 +466,8 @@ document.addEventListener('DOMContentLoaded', function() {
       loadPage(href.replace(/\\.md$/, ''));
     } else {
       const srcPath = href.startsWith('/') ? href.slice(1) : href;
-      window.open('/api/source/' + srcPath, '_blank');
+      const currentSlug = location.hash.slice(1) || wikiSlugs[0] || '';
+      window.open('/api/source/' + srcPath + '?version=' + currentVersion + '&from=' + encodeURIComponent(currentSlug), '_blank');
     }
   });
 });
