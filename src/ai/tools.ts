@@ -159,6 +159,36 @@ export const toolDefinitions: ToolDefinition[] = [
         required: ['slug']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_wiki',
+      description: 'Keyword search across all Wiki pages. Returns matching pages with content snippets.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          max_results: { type: 'number', description: 'Maximum results (default 5)', nullable: true }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'semantic_search',
+      description: 'Semantic search across Wiki using embeddings (if configured). Use when keyword search fails or for conceptual questions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          max_results: { type: 'number', description: 'Maximum results (default 5)', nullable: true }
+        },
+        required: ['query']
+      }
+    }
   }
 ];
 
@@ -422,6 +452,113 @@ async function readWiki(slug: string): Promise<ToolResult> {
   }
 }
 
+// Embedding config for semantic search (set at runtime)
+let embeddingConfig: { provider: string; model: string; baseUrl: string; apiKey: string } | null = null;
+
+export function initTools(embConfig?: { provider: string; model: string; baseUrl: string; apiKey: string }): void {
+  embeddingConfig = embConfig || null;
+}
+
+async function searchWiki(query: string, maxResults?: number): Promise<ToolResult> {
+  try {
+    if (!query || typeof query !== 'string') return { type: 'error', data: 'query is required' };
+    const wikiPath = await findLatestWikiDir();
+    if (!wikiPath) return { type: 'error', data: 'No wiki found.' };
+
+    const max = maxResults || 5;
+    const files = await readdir(wikiPath);
+    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'index.md').sort();
+    const results: { slug: string; title: string; snippet: string; score: number }[] = [];
+
+    // Try index.json for title mapping
+    const jsonPath = join(wikiPath, 'index.json');
+    let titleMap: Record<string, string> = {};
+    if (existsSync(jsonPath)) {
+      try {
+        const raw = await readFile(jsonPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        for (const s of parsed.sections || []) {
+          for (const t of s.topics || []) {
+            if (t.type !== 'group' && t.title) {
+              const slug = t.title.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+              titleMap[slug] = t.title;
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    const queryLower = query.toLowerCase();
+    for (const file of mdFiles) {
+      try {
+        const content = await readFile(join(wikiPath, file), 'utf-8');
+        const contentLower = content.toLowerCase();
+        if (contentLower.includes(queryLower)) {
+          const slug = file.replace(/\.md$/, '');
+          const title = titleMap[slug] || slug;
+          // Extract snippet around first match
+          const idx = contentLower.indexOf(queryLower);
+          const start = Math.max(0, idx - 60);
+          const end = Math.min(content.length, idx + query.length + 120);
+          let snippet = content.slice(start, end).replace(/\n/g, ' ').trim();
+          if (start > 0) snippet = '...' + snippet;
+          if (end < content.length) snippet = snippet + '...';
+          results.push({ slug, title, snippet, score: 1 });
+        }
+      } catch { /* skip unreadable */ }
+    }
+
+    return { type: 'success', data: results.slice(0, max) };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
+async function semanticSearch(query: string, maxResults?: number): Promise<ToolResult> {
+  try {
+    if (!query || typeof query !== 'string') return { type: 'error', data: 'query is required' };
+    if (!embeddingConfig) return { type: 'error', data: 'Embedding not configured. Run wiki-cli config to set up.' };
+
+    const wikiPath = await findLatestWikiDir();
+    if (!wikiPath) return { type: 'error', data: 'No wiki found.' };
+
+    const files = await readdir(wikiPath);
+    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'index.md').sort();
+    if (mdFiles.length === 0) return { type: 'error', data: 'No wiki pages found.' };
+
+    const { semanticSearch: doSearch } = await import('./embeddings.js');
+    const searchResults = await doSearch(query, wikiPath, embeddingConfig, mdFiles, maxResults || 5);
+
+    // Attach titles from index.json
+    const jsonPath = join(wikiPath, 'index.json');
+    let titleMap: Record<string, string> = {};
+    if (existsSync(jsonPath)) {
+      try {
+        const raw = await readFile(jsonPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        for (const s of parsed.sections || []) {
+          for (const t of s.topics || []) {
+            if (t.type !== 'group' && t.title) {
+              const slug = t.title.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+              titleMap[slug] = t.title;
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    const results = searchResults.map(r => ({
+      slug: r.slug,
+      title: titleMap[r.slug] || r.slug,
+      score: Math.round(r.score * 1000) / 1000,
+    }));
+
+    return { type: 'success', data: results };
+  } catch (err: any) {
+    return { type: 'error', data: err.message };
+  }
+}
+
 const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   list_directory: (args) => listDirectory(args.dir_path, args.max_depth),
   list_files: (args) => listFiles(args.path, args.extensions),
@@ -432,7 +569,9 @@ const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   git_remote_info: () => gitRemoteInfo(),
   dotenv_template: () => dotenvTemplate(),
   list_wiki_pages: () => listWikiPages(),
-  read_wiki: (args) => readWiki(args.slug)
+  read_wiki: (args) => readWiki(args.slug),
+  search_wiki: (args) => searchWiki(args.query, args.max_results),
+  semantic_search: (args) => semanticSearch(args.query, args.max_results),
 };
 
 export async function executeToolCall(name: string, args: any): Promise<ToolResult> {

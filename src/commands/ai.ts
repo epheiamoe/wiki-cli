@@ -63,6 +63,19 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
   const client = new LLMClient(config);
   const workDir = resolve(process.cwd());
 
+  // Initialize tools with embedding config
+  const { initTools } = await import('../ai/tools.js');
+  if (config.embeddingModel && config.embeddingBaseUrl && config.embeddingApiKey) {
+    initTools({
+      provider: config.embeddingProvider || '',
+      model: config.embeddingModel,
+      baseUrl: config.embeddingBaseUrl,
+      apiKey: config.embeddingApiKey,
+    });
+  } else {
+    initTools();
+  }
+
   // Check for wiki
   let hasWiki = false;
   let wikiInfo = '';
@@ -91,12 +104,16 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
   }
 
   // Prepare tools list
-  const wikiToolDefs = toolDefinitions.filter(t =>
-    t.function.name === 'list_wiki_pages' || t.function.name === 'read_wiki'
-  );
-  const allToolDefs = hasWiki ? toolDefinitions : toolDefinitions.filter(t =>
-    t.function.name !== 'list_wiki_pages' && t.function.name !== 'read_wiki'
-  );
+  const hasEmbedding = !!(config.embeddingModel && config.embeddingBaseUrl && config.embeddingApiKey);
+  const skipTools = new Set(['list_wiki_pages', 'read_wiki', 'search_wiki']);
+  if (!hasEmbedding) skipTools.add('semantic_search');
+  if (!hasWiki) {
+    skipTools.add('list_wiki_pages');
+    skipTools.add('read_wiki');
+    skipTools.add('search_wiki');
+    skipTools.add('semantic_search');
+  }
+  const allToolDefs = toolDefinitions.filter(t => !skipTools.has(t.function.name));
 
   // Build system prompt
   const aiSysVars = {

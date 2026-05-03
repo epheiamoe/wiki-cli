@@ -15,8 +15,8 @@ describe('toolDefinitions', () => {
     expect(Array.isArray(toolDefinitions)).toBe(true);
   });
 
-  it('should have all 10 tools', () => {
-    expect(toolDefinitions.length).toBe(10);
+  it('should have all 12 tools', () => {
+    expect(toolDefinitions.length).toBe(12);
   });
 
   it('should include list_directory', () => {
@@ -31,6 +31,8 @@ describe('toolDefinitions', () => {
     expect(names).toContain('dotenv_template');
     expect(names).toContain('list_wiki_pages');
     expect(names).toContain('read_wiki');
+    expect(names).toContain('search_wiki');
+    expect(names).toContain('semantic_search');
   });
 
   it('each tool should have valid schema with type "object"', () => {
@@ -132,6 +134,17 @@ describe('executeToolCall', () => {
 
   it('read_wiki should handle nonexistent page gracefully', async () => {
     const result = await executeToolCall('read_wiki', { slug: 'nonexistent_page_xyz' });
+    expect(['success', 'error']).toContain(result.type);
+  });
+
+  it('search_wiki should return error when query is missing', async () => {
+    const result = await executeToolCall('search_wiki', {});
+    expect(result.type).toBe('error');
+    expect(result.data).toContain('query');
+  });
+
+  it('search_wiki should handle nonexistent query gracefully', async () => {
+    const result = await executeToolCall('search_wiki', { query: 'zzz_nonexistent_zzz' });
     expect(['success', 'error']).toContain(result.type);
   });
 });

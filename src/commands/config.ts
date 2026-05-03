@@ -1,5 +1,5 @@
 import inquirer from 'inquirer';
-import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath, supportsJsonMode } from '../config/config-store.js';
+import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath, supportsJsonMode, getEmbeddingProviders, getEmbeddingModelsByProvider } from '../config/config-store.js';
 import type { WikiCliConfig } from '../config/config-store.js';
 import { logSuccess } from '../utils/progress.js';
 
@@ -100,6 +100,73 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
     },
   ]);
 
+  // Embedding configuration
+  const { useEmbedding } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'useEmbedding',
+      message: 'Configure Embedding for semantic wiki search? (optional)',
+      default: !!existingConfig?.embeddingModel,
+    },
+  ]);
+
+  let embeddingProvider: string | undefined;
+  let embeddingModel: string | undefined;
+  let embeddingBaseUrl: string | undefined;
+  let embeddingApiKey: string | undefined;
+
+  if (useEmbedding) {
+    const embeddingProviders = getEmbeddingProviders();
+    const { ep } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'ep',
+        message: 'Select Embedding provider:',
+        choices: [
+          ...embeddingProviders.map(p => ({ name: p, value: p })),
+          { name: '✏️  Custom (enter manually)', value: '__custom__' },
+        ],
+        default: existingConfig?.embeddingProvider,
+      },
+    ]);
+
+    if (ep === '__custom__') {
+      const custom = await inquirer.prompt([
+        { type: 'input', name: 'baseUrl', message: 'Embedding API Base URL:', default: existingConfig?.embeddingBaseUrl },
+        { type: 'input', name: 'model', message: 'Embedding model name:', default: existingConfig?.embeddingModel },
+      ]);
+      embeddingBaseUrl = custom.baseUrl;
+      embeddingModel = custom.model;
+    } else {
+      const epModels = getEmbeddingModelsByProvider(ep);
+      const { em } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'em',
+          message: `Select embedding model for ${ep}:`,
+          choices: epModels.map(m => ({
+            name: `${m.model} - ${m.description}${m.pricingHint ? ` (${m.pricingHint})` : ''}`,
+            value: m,
+          })),
+        },
+      ]);
+      embeddingBaseUrl = em.baseUrl;
+      embeddingModel = em.model;
+    }
+
+    embeddingProvider = ep === '__custom__' ? 'Custom' : ep;
+
+    const { eak } = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'eak',
+        message: 'Embedding API Key (leave empty to reuse LLM API key):',
+        mask: '*',
+      },
+    ]);
+    embeddingApiKey = eak || apiKey;
+  }
+
   const config: WikiCliConfig = {
     provider,
     baseUrl,
@@ -107,6 +174,10 @@ export async function configCommand(options: Partial<WikiCliConfig>): Promise<vo
     apiKey,
     lang: lang || 'zh',
     jsonMode,
+    embeddingProvider,
+    embeddingModel,
+    embeddingBaseUrl,
+    embeddingApiKey,
   };
 
   await saveConfig(config);
