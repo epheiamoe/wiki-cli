@@ -19,7 +19,7 @@ export async function browseCommand(): Promise<void> {
 
   const entries = await readdir(wikiDir, { withFileTypes: true });
   const timestamps = entries
-    .filter(e => e.isDirectory() && e.name !== 'temp')
+    .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
     .map(e => e.name)
     .sort()
     .reverse();
