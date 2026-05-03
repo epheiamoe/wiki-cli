@@ -134,8 +134,6 @@ async function chatOnce(
 
   let accumulatedContent = '';
   let accumulatedReasoning = '';
-  let reasoningStarted = false;
-  let contentStarted = false;
 
   const maxIterations = 50;
 
@@ -143,6 +141,8 @@ async function chatOnce(
     let hasToolCalls = false;
     let currentContent = '';
     let currentReasoning = '';
+    let reasoningStarted = false;
+    let contentStarted = false;
     const toolCallsMap = new Map<string, ToolCall>();
 
     const streamIter = client.chatStream(messages, tools, false);
