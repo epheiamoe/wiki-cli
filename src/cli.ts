@@ -21,6 +21,8 @@ program
   .option('--model <model>', 'Model name')
   .option('--api-key <key>', 'API key')
   .option('--lang <lang>', 'Documentation language (zh/en)')
+  .option('--llm-only', 'Configure only LLM settings')
+  .option('--embedding-only', 'Configure only Embedding settings')
   .action(async (options) => {
     try {
       await configCommand(options);

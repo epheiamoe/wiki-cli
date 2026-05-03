@@ -9,8 +9,13 @@ export interface EmbeddingConfig {
   apiKey: string;
 }
 
-let embeddingCache: Record<string, number[]> | null = null;
-let cacheWikiPath: string | null = null;
+interface CacheData {
+  _model: string;
+  _generated: string;
+  [slug: string]: number[] | string;
+}
+
+let embeddingCache: { data: Record<string, number[]>; model: string; wikiPath: string } | null = null;
 
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0, na = 0, nb = 0;
@@ -73,28 +78,41 @@ export async function semanticSearch(
   maxResults: number = 5
 ): Promise<SearchResult[]> {
   const queryEmb = await getEmbedding(query, config);
-
-  // Use cache or compute
   const cachePath = join(wikiPath, '.embeddings.json');
+
   let pageEmbs: Record<string, number[]>;
 
-  if (embeddingCache && cacheWikiPath === wikiPath) {
-    pageEmbs = embeddingCache;
-  } else if (existsSync(cachePath)) {
+  // Check in-memory cache (fastest)
+  if (embeddingCache && embeddingCache.wikiPath === wikiPath && embeddingCache.model === config.model) {
+    pageEmbs = embeddingCache.data;
+  }
+  // Check file cache with model validation
+  else if (existsSync(cachePath)) {
     try {
-      pageEmbs = JSON.parse(await readFile(cachePath, 'utf-8'));
+      const raw = await readFile(cachePath, 'utf-8');
+      const parsed = JSON.parse(raw) as CacheData;
+      if (parsed._model === config.model) {
+        // Cache is valid for this model
+        const { _model, _generated, ...embeddings } = parsed;
+        pageEmbs = embeddings as Record<string, number[]>;
+      } else {
+        // Model changed, regenerate
+        pageEmbs = await computePageEmbeddings(wikiPath, config, pageFiles);
+        await saveCache(cachePath, pageEmbs, config.model);
+      }
     } catch {
       pageEmbs = await computePageEmbeddings(wikiPath, config, pageFiles);
+      await saveCache(cachePath, pageEmbs, config.model);
     }
-  } else {
+  }
+  // No cache at all
+  else {
     pageEmbs = await computePageEmbeddings(wikiPath, config, pageFiles);
-    try {
-      await writeFile(cachePath, JSON.stringify(pageEmbs), 'utf-8');
-    } catch { /* non-critical */ }
+    await saveCache(cachePath, pageEmbs, config.model);
   }
 
-  embeddingCache = pageEmbs;
-  cacheWikiPath = wikiPath;
+  // Update in-memory cache
+  embeddingCache = { data: pageEmbs, model: config.model, wikiPath };
 
   const results: SearchResult[] = [];
   for (const [slug, emb] of Object.entries(pageEmbs)) {
@@ -105,7 +123,17 @@ export async function semanticSearch(
   return results.slice(0, maxResults);
 }
 
+async function saveCache(cachePath: string, embeddings: Record<string, number[]>, model: string): Promise<void> {
+  try {
+    const data: CacheData = {
+      _model: model,
+      _generated: new Date().toISOString(),
+      ...embeddings,
+    };
+    await writeFile(cachePath, JSON.stringify(data), 'utf-8');
+  } catch { /* non-critical */ }
+}
+
 export function clearEmbeddingCache(): void {
   embeddingCache = null;
-  cacheWikiPath = null;
 }
