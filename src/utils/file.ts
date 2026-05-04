@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rm, readdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, readdir, rename, cp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
 
@@ -30,7 +30,16 @@ export async function listDir(dirPath: string): Promise<string[]> {
 }
 
 export async function moveDir(src: string, dest: string): Promise<void> {
-  await rename(src, dest);
+  try {
+    await rename(src, dest);
+  } catch (err: any) {
+    if (err.code === 'EXDEV') {
+      await cp(src, dest, { recursive: true });
+      await rm(src, { recursive: true, force: true });
+    } else {
+      throw err;
+    }
+  }
 }
 
 export function getTimestamp(): string {

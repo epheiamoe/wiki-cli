@@ -118,7 +118,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   // Initialize tools with web fetch config
   const webConfig = !config.webFetchDisabled ? { baseUrl: config.webFetchBaseUrl || 'https://r.jina.ai', apiKey: config.webFetchApiKey } : { disabled: true, baseUrl: '', apiKey: '' };
-  initTools(undefined, webConfig);
+  initTools(undefined, webConfig, workDir);
 
   logInfo('Phase 1: Analyzing repository and generating outline...');
   const topics = await generateOutline(client, config, workDir);

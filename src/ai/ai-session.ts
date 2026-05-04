@@ -19,9 +19,14 @@ const INDEX_PATH = join(homedir(), '.wiki-cli', 'sessions-index.json');
 
 // In-memory index cache
 let indexCache: Record<string, string> | null = null;
+let sessionsBaseDir: string | null = null;
+
+export function setSessionsDir(dir: string): void {
+  sessionsBaseDir = dir;
+}
 
 function getSessionsDir(): string {
-  return join(process.cwd(), SESSIONS_DIR_REL);
+  return join(sessionsBaseDir ?? process.cwd(), SESSIONS_DIR_REL);
 }
 
 function sessionPath(id: string): string {

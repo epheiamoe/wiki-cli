@@ -79,10 +79,14 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
       model: config.embeddingModel,
       baseUrl: config.embeddingBaseUrl,
       apiKey: config.embeddingApiKey,
-    }, webConfig);
+    }, webConfig, workDir);
   } else {
-    initTools(undefined, webConfig);
+    initTools(undefined, webConfig, workDir);
   }
+
+  // Set explicit sessions directory
+  const { setSessionsDir } = await import('../ai/ai-session.js');
+  setSessionsDir(workDir);
 
   // Check for wiki
   let hasWiki = false;

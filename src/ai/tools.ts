@@ -334,12 +334,14 @@ async function searchInDir(root: string, dir: string, regex: RegExp, extensions:
   }
 }
 
+let projectRoot: string | null = null;
+
 async function gitLog(maxCount?: number, path?: string): Promise<ToolResult> {
   try {
     const count = maxCount ?? 20;
     let cmd = `git log --oneline --max-count=${count}`;
     if (path) cmd += ` -- "${path}"`;
-    const output = execSync(cmd, { encoding: 'utf-8', cwd: process.cwd() });
+    const output = execSync(cmd, { encoding: 'utf-8', cwd: projectRoot ?? process.cwd() });
     return { type: 'success', data: output.trim() };
   } catch (err: any) {
     return { type: 'error', data: err.message };
@@ -350,7 +352,7 @@ async function gitShow(object: string, path?: string): Promise<ToolResult> {
   try {
     let cmd = `git show ${object}`;
     if (path) cmd += `:${path}`;
-    const output = execSync(cmd, { encoding: 'utf-8', cwd: process.cwd() });
+    const output = execSync(cmd, { encoding: 'utf-8', cwd: projectRoot ?? process.cwd() });
     return { type: 'success', data: output };
   } catch (err: any) {
     return { type: 'error', data: err.message };
@@ -359,7 +361,7 @@ async function gitShow(object: string, path?: string): Promise<ToolResult> {
 
 async function gitRemoteInfo(): Promise<ToolResult> {
   try {
-    const output = execSync('git remote -v', { encoding: 'utf-8', cwd: process.cwd() });
+    const output = execSync('git remote -v', { encoding: 'utf-8', cwd: projectRoot ?? process.cwd() });
     const lines = output.trim().split('\n').filter(Boolean);
     const remotes = lines.map(line => {
       const parts = line.split(/\s+/);
@@ -373,7 +375,7 @@ async function gitRemoteInfo(): Promise<ToolResult> {
 
 async function dotenvTemplate(): Promise<ToolResult> {
   try {
-    const envPath = join(process.cwd(), '.env.example');
+    const envPath = join(projectRoot ?? process.cwd(), '.env.example');
     if (!existsSync(envPath)) {
       return { type: 'error', data: '.env.example not found in current directory' };
     }
@@ -386,7 +388,7 @@ async function dotenvTemplate(): Promise<ToolResult> {
 
 async function findLatestWikiDir(): Promise<string | null> {
   try {
-    const wikiDir = resolve(process.cwd(), '.wiki');
+    const wikiDir = resolve(projectRoot ?? process.cwd(), '.wiki');
     if (!existsSync(wikiDir)) return null;
     const entries = await readdir(wikiDir, { withFileTypes: true });
     const dirs = entries
@@ -469,9 +471,10 @@ async function readWiki(slug: string): Promise<ToolResult> {
 let embeddingConfig: { provider: string; model: string; baseUrl: string; apiKey: string } | null = null;
 let webFetchConfig: { disabled?: boolean; baseUrl: string; apiKey?: string } | null = null;
 
-export function initTools(embConfig?: { provider: string; model: string; baseUrl: string; apiKey: string }, webConfig?: { disabled?: boolean; baseUrl: string; apiKey?: string }): void {
+export function initTools(embConfig?: { provider: string; model: string; baseUrl: string; apiKey: string }, webConfig?: { disabled?: boolean; baseUrl: string; apiKey?: string }, root?: string): void {
   embeddingConfig = embConfig || null;
   webFetchConfig = webConfig || null;
+  projectRoot = root ?? process.cwd();
 }
 
 export function getFilteredTools(): ToolDefinition[] {

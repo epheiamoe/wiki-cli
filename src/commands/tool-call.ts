@@ -24,9 +24,10 @@ export async function toolCallCommand(name: string, argsJson?: string): Promise<
     initTools(
       { provider: config.embeddingProvider || '', model: config.embeddingModel, baseUrl: config.embeddingBaseUrl, apiKey: config.embeddingApiKey },
       webConfig,
+      process.cwd(),
     );
   } else {
-    initTools(undefined, webConfig);
+    initTools(undefined, webConfig, process.cwd());
   }
 
   let args: any = {};
