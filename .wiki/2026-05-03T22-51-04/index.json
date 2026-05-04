@@ -1,0 +1,166 @@
+{
+  "sections": [
+    {
+      "name": "入门指南",
+      "topics": [
+        {
+          "level": "初学",
+          "title": "概览",
+          "description": "项目定位、核心功能（config/generate/browse/ai 四条命令）与设计哲学",
+          "task": "阅读 README.md 和 src/cli.ts，用表格对比四条命令的功能与参数。解释项目为何聚焦 LLM 驱动的自动化文档生成。描述目标用户与适用场景。引用 cli.ts 中 program.command 的定义作为证据。"
+        },
+        {
+          "level": "初学",
+          "title": "快速开始",
+          "description": "5 分钟内完成安装、配置、生成并浏览文档的完整流程",
+          "task": "按步骤写出流程：npm install -g → wiki-cli config（选 DeepSeek 等）→ wiki-cli generate → wiki-cli browse。每一步配代码块和预期输出截图描述。强调首次使用必须配置 API Key，提示 npx 方式也可行。结尾给出 .wiki/ 目录结构示意。"
+        },
+        {
+          "type": "group",
+          "title": "命令详解"
+        },
+        {
+          "level": "初学",
+          "title": "配置命令：wiki-cli config",
+          "description": "交互式或命令行方式配置 LLM 提供商、模型、API Key 和文档语言",
+          "task": "阅读 src/commands/config.ts 和 src/config/config-store.ts 和 src/config/default-models.json。分场景说明：交互模式与命令行模式。列出支持的 7 个提供商及其模型。解释 jsonMode 的自动推断逻辑和自定义提供商支持。提配置存储路径 ~/.wiki-cli/config.json。"
+        },
+        {
+          "level": "中级",
+          "title": "生成命令：wiki-cli generate",
+          "description": "仓库分析、大纲生成、页面生成、断点续传、并行模式与失败重试全流程",
+          "task": "阅读 src/commands/generate.ts 全文。分阶段阐述：Phase1 大纲生成（LLM 多轮工具调用）→ Phase2 页面生成（串行/并行）。重点分析 collectFullResponse 的流式工具循环、parseOutlineJson 的 JSON 提取、断点续传的 TEMP_DIR 机制、runConcurrent 并发控制、generateIndex 索引创建。解释 retry 参数和 silent 模式。"
+        },
+        {
+          "level": "初学",
+          "title": "浏览命令：wiki-cli browse",
+          "description": "启动本地 HTTP 服务器，以 Markdown 渲染方式浏览已生成的 Wiki 文档",
+          "task": "阅读 src/commands/browse.ts。说明服务器启动流程、端口自动查找（findFreePort）、sidebar 构建逻辑（index.json/index.md）、Markdown 渲染（marked）+ 代码高亮（highlight.js）。重点解释 /api/page/ 和 /api/source/ 两个 API 端点。列出前端交互功能：版本切换、侧边栏导航、源码查看。"
+        },
+        {
+          "level": "中级",
+          "title": "AI 交互命令：wiki-cli ai",
+          "description": "基于 LLM 的代码库智能问答，支持多轮对话、会话持久化和斜杠命令",
+          "task": "阅读 src/commands/ai.ts 和 src/ai/ai-session.ts。按场景说明：单次问答模式（--question/--answer-only）vs 交互式模式。解释会话生命周期：createSession → interactiveLoop → saveSession。列出所有斜杠命令（/help、/save、/switch 等）。解释 Wiki 工具优先策略——有 wiki 时优先查询 wiki，无则提示先生成。"
+        },
+        {
+          "type": "group",
+          "title": "环境与配置"
+        },
+        {
+          "level": "初学",
+          "title": "LLM 提供商与模型注册",
+          "description": "内置支持的 7 大 LLM 提供商、默认模型列表及自定义提供商配置方法",
+          "task": "阅读 src/config/default-models.json 和 src/config/config-store.ts。用表格列出所有提供商及其模型、Base URL、定价提示。重点分析 getProviders/getModelsByCountry 如何从 JSON 动态构建选择列表。解释 supportsJsonMode 如何判断哪些提供商支持 JSON 输出模式。说明 Custom 提供商的交互式配置流程。"
+        },
+        {
+          "level": "中级",
+          "title": "工作区管理与远程仓库克隆",
+          "description": "支持本地目录与远程 Git 仓库两种工作模式，含临时/持久克隆选项",
+          "task": "阅读 src/utils/workspace.ts 和 src/utils/git.ts。解释 resolveWorkDir 的分支逻辑：有 url 走克隆流程（分 temp/output/defaultRepo），无 url 走本地目录。分析 ensureRepo 的缓存更新策略和 git fetch/merge 流程。列出 --url/--dir/--output/--branch/--depth/--temp 组合的 6 种使用场景。"
+        }
+      ]
+    },
+    {
+      "name": "深入探索",
+      "topics": [
+        {
+          "type": "group",
+          "title": "核心架构"
+        },
+        {
+          "level": "中级",
+          "title": "CLI 入口与命令调度机制",
+          "description": "基于 Commander.js 的 CLI 框架设计，四条子命令的注册与参数解析",
+          "task": "阅读 src/cli.ts。解析 program.command 链式调用的结构。说明每条命令的 option 定义、类型转换（parseInt）和错误处理（try-catch + logError + exit）。对比四条命令的 action 签名差异。说明 --help 和空参数兜底逻辑。引用 commander 官方文档对照本项目的实现风格。"
+        },
+        {
+          "level": "高级",
+          "title": "LLM 客户端：流式通信与重试机制",
+          "description": "OpenAI 兼容 API 的流式/非流式客户端，含自动重试、工具调用与 JSON 模式",
+          "task": "阅读 src/ai/llm-client.ts 全文。重点分析：buildRequest 如何拼接请求体和 headers；chatStream 生成器函数的 SSE 解析（data: 行分割、[DONE] 终止、delta 解析）；chat 非流式方法的完整响应处理；MAX_RETRIES 指数退避重试逻辑；stripCodeFence 工具函数。画出请求-响应-重试的状态图。"
+        },
+        {
+          "level": "高级",
+          "title": "工具系统：LLM 只读探索工具的设计",
+          "description": "8 个只读工具的定义、注册、路由调度与执行器模式",
+          "task": "阅读 src/ai/tools.ts 全文。用表格列出全部 8 个工具（list_directory/list_files/read_file/search_in_files/git_log/git_show/git_remote_info/dotenv_template）和 2 个 Wiki 工具（list_wiki_pages/read_wiki）。分析 ToolDefinition 接口的结构与 OpenAI function calling 标准的对应关系。解释 toolHandlers 路由映射和 executeToolCall 调度机制。列出 buildTree/collectFiles/searchInDir 等递归实现的细节。"
+        },
+        {
+          "level": "中级",
+          "title": "提示词模板引擎：解耦的模板渲染",
+          "description": "外部化 prompts 目录，支持 {{变量}} 插值模板渲染的设计与实现",
+          "task": "阅读 src/ai/prompts.ts 和 prompts/*.md 全部 5 个文件。解释 loadPrompt 通过相对路径加载 prompts 目录的机制（PROMPTS_DIR 解析）。分析 renderPrompt 的两步流程：loadTemplate → fillPrompt（正则替换 {{var}}）。分别说明 5 个模板的用途：outline-system/outline-user 用于大纲生成，page-system/page-user 用于页面生成，ai-system 用于 AI 问答。"
+        },
+        {
+          "level": "高级",
+          "title": "生成管线：从大纲到页面的完整流程",
+          "description": "Outline 生成的工具循环、页面生成的独立性约束、索引文件的构建",
+          "task": "阅读 src/commands/generate.ts 中 generateOutline 和 parseOutlineJson 函数。分析工具循环：LLM 多轮调用 → 收集工具结果 → 重新注入消息 → 直到输出有效 JSON。解释 parseOutlineJson 的容错策略（stripCodeFence → 正则提取 JSON 对象 → 兼容 description/task/brief 字段）。分析 generatePages 的页面独立性设计（每个页面只接收系统提示和任务描述，不依赖其他页面内容）。说明 generateIndex 如何重建 sections 结构。"
+        },
+        {
+          "level": "高级",
+          "title": "断点续传与并行生成策略",
+          "description": "基于 .wiki/temp 的检查点恢复机制与信号量限流并发控制",
+          "task": "阅读 src/commands/generate.ts 中 resume 判断逻辑和 runConcurrent 函数。重点分析：启动时检测 TEMP_DIR 是否存在 → inquirer 询问 resume/fresh；页面生成前检查 .md 文件已存在则跳过；runConcurrent 基于 Set<Promise> 的信号量实现；retryList 逐轮缩小的失败重试策略。画出 resume 到 completed 的状态转换图。"
+        },
+        {
+          "level": "高级",
+          "title": "AI 会话与会话管理系统",
+          "description": "对话保存/恢复、历史查看、会话切换与存储持久化",
+          "task": "阅读 src/ai/ai-session.ts 和 src/commands/ai.ts 中的 interactiveLoop。分析 Session 接口字段（id/created/updated/summary/messages）。说明 SESSIONS_DIR = .wiki/sessions 的文件存储策略（每会话一个 JSON 文件）。重点解释 /switch 切换会话实现：保存当前 → 加载目标 → 保留 system prompt 替换 messages。解释 printSession 和 showSessionsTable 的显示逻辑。"
+        },
+        {
+          "type": "group",
+          "title": "基础设施"
+        },
+        {
+          "level": "中级",
+          "title": "文件系统工具集",
+          "description": "目录确保、文本读写、移动删除、时间戳与 Slug 转换等文件操作封装",
+          "task": "阅读 src/utils/file.ts。列出所有导出函数的签名和用途。重点分析 ensureDir 递归创建目录、writeTextFile 自动创建父目录、moveDir 使用 rename 的原子性、getTimestamp 时间戳格式（ISO-like with hyphens）、toSlug 中英文字符清理逻辑。说明这些工具如何被 generate 和 browse 命令依赖。"
+        },
+        {
+          "level": "中级",
+          "title": "本地 HTTP 服务器与前端",
+          "description": "Node.js 原生 HTTP 服务器 + 内嵌 HTML/CSS/JS 的全栈 SPA 浏览体验",
+          "task": "阅读 src/commands/browse.ts 中 serveHtml 函数生成的完整 HTML。分析内嵌 CSS（GitHub Dark 主题配色）、JavaScript SPA 逻辑（loadPage/switchVersion/hash路由/highlight.js）。说明 /api/page/ 的 Markdown→HTML 渲染管线、/api/source/ 的源码高亮展示、版本切换 overlay 组件。解释 sanitizePath 防止路径穿越攻击。"
+        },
+        {
+          "level": "中级",
+          "title": "进度显示与日志输出",
+          "description": "基于 ora 和 chalk 的终端输出系统：加载动画、彩色日志、工具调用跟踪",
+          "task": "阅读 src/utils/progress.ts。列出所有 log* 函数的输出样式和适用场景。重点分析 logToolCall/logToolResult 的工具调用可视化设计（🔧 图标 + 截断参数预览）。说明 createSpinner 的 ora 集成。解释 generate 命令中 collectFullResponse 如何混合 stream 输出与日志标记。"
+        },
+        {
+          "level": "中级",
+          "title": "测试策略与 Vitest 配置",
+          "description": "单元测试覆盖核心模块：配置存储、文件工具、LLM 客户端、大纲解析器、提示词引擎和工具系统",
+          "task": "阅读 vitest.config.ts 和 tests/ 下全部 6 个测试文件。说明 globals:true + node environment 配置。每测试文件列出核心测试用例：config-store.test.ts 的配置读写、file.test.ts 的文件操作、llm-client.test.ts 的客户端行为、outline-parser.test.ts 的 JSON 解析容错、prompts.test.ts 的模板渲染、tools.test.ts 的工具执行。强调测试边界条件（空输入、无效 JSON、网络失败模拟）。"
+        },
+        {
+          "type": "group",
+          "title": "扩展与定制"
+        },
+        {
+          "level": "中级",
+          "title": "添加新的 LLM 提供商",
+          "description": "修改 default-models.json 注册新模型、调整 supportsJsonMode、处理非标准 API",
+          "task": "指引读者修改 src/config/default-models.json 添加新条目。分析 JSON_MODE_PROVIDERS Set 在 config-store.ts 中的维护方式。说明 Custom 提供商的工作流。提示非 OpenAI 兼容 API 的适配风险（如 Anthropic 或 Google 的请求体差异）与局限性。"
+        },
+        {
+          "level": "高级",
+          "title": "自定义提示词模板",
+          "description": "修改 prompts/*.md 调整文档风格、深度、受众定位和语言",
+          "task": "阅读全部 5 个 prompts/*.md 文件。解释每个模板中 {{变量}} 的注入来源（src/ai/prompts.ts 中的 renderPrompt 调用点）。说明 outline-system.md 的分析框架 vs page-system.md 的 Diátaxis 风格差异。指导读者如何通过修改模板改变输出格式（如增加 Mermaid 图表要求、调整来源标注风格）。警告模板格式破坏可能导致 LLM 输出不稳定的风险。"
+        },
+        {
+          "level": "中级",
+          "title": "远程仓库支持：Git 集成细节",
+          "description": "Git 克隆、缓存更新、分支切换与临时/持久克隆的完整实现",
+          "task": "阅读 src/utils/git.ts。重点分析 ensureRepo 的三种场景：新克隆（git clone）、已有仓库更新（git fetch + checkout + merge）、网络不可用时的缓存回退。解释 urlToDirName 如何将 URL 转换为目录名。说明 tmpdir 临时模式与持久仓库目录 ~/.wiki-cli/repos/ 的差异。列出 --url 相关全部选项的交互矩阵。"
+        }
+      ]
+    }
+  ]
+}

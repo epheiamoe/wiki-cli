@@ -1,0 +1,190 @@
+{
+  "sections": [
+    {
+      "name": "入门指南",
+      "topics": [
+        {
+          "level": "初学",
+          "title": "概览",
+          "description": "项目定位、核心功能与设计哲学。了解 wiki-cli 如何用一条命令将代码库转化为结构化 Wiki。",
+          "task": "阅读 README.md 和 cli.ts，用表格概括三条核心命令（generate/browse/ai）的能力矩阵。强调两阶段生成、流式输出、断点续传、Tool Call 等差异化特性。引用 src/cli.ts 中 Commander 注册的四个命令，解释每条命令的定位。控制在 500 字以内。"
+        },
+        {
+          "level": "初学",
+          "title": "快速开始",
+          "description": "5 分钟从零到一完成配置、生成、浏览的完整流程。",
+          "task": "按步骤写出安装（npm install）、配置（wiki-cli config 交互式或纯参数）、生成（wiki-cli generate）、浏览（wiki-cli browse）的完整流程。每步配带注释的代码块。引用 src/commands/config.ts 和 src/commands/generate.ts 的关键参数。标注每一步预期输出。"
+        },
+        {
+          "type": "group",
+          "title": "命令参考"
+        },
+        {
+          "level": "初学",
+          "title": "配置命令详解",
+          "description": "wiki-cli config 的交互式与命令行模式，LLM/Embedding/Web Fetch 三套配置体系。",
+          "task": "阅读 src/commands/config.ts 和 src/config/config-store.ts。分三节说明 LLM、Embedding、Web Fetch 配置的交互流程和命令行参数（--provider/--model/--api-key 等）。用表格列出支持的 Provider 和 JSON 模式兼容性。说明配置持久化到 ~/.wiki-cli/config.json 的存储结构。"
+        },
+        {
+          "level": "初学",
+          "title": "生成命令详解",
+          "description": "wiki-cli generate 的两阶段生成流程、参数选项与工作目录解析。",
+          "task": "阅读 src/commands/generate.ts。分两阶段（Phase 1 大纲生成、Phase 2 并发生成）说明内部流程。用表格解释所有选项：-C/-u/-o/-b/-d/-t/-p/-c/-r/-s/--browse。重点解释 --url 远程仓库克隆、--parallel 并发生成、断点续传机制（TEMP_DIR 检查）。引用 src/utils/workspace.ts 的工作目录解析逻辑。"
+        },
+        {
+          "level": "初学",
+          "title": "浏览命令详解",
+          "description": "wiki-cli browse 内置 HTTP 服务器、导航侧栏、版本切换与源码跳转。",
+          "task": "阅读 src/commands/browse.ts。解释 HTTP 服务器的启动流程（findFreePort）、HTML 模板结构（暗色主题、侧栏、版本切换 overlay）。说明 /api/page/ 和 /api/source/ 两个核心 API 端点的职责。强调源码高亮（highlight.js）、Mermaid 图表渲染、FIX 来源链接跳转。引用 loadSidebar 的 index.json 解析逻辑。"
+        },
+        {
+          "level": "初学",
+          "title": "AI 问答命令详解",
+          "description": "wiki-cli ai 的交互式问答、一次性问答、会话管理与斜杠命令系统。",
+          "task": "阅读 src/commands/ai.ts。说明交互模式（rl.question 循环）、一次性模式（-a/--answer-only）、会话恢复（--session）三种使用方式。用表格列出所有斜杠命令（/help /undo /save /sessions /switch /wiki 等）。解释 Ctrl+C 打断流式输出的实现（SIGINT handler + isCancelled callback）。引用 src/ai/ai-session.ts 的 CRUD 逻辑。"
+        },
+        {
+          "type": "group",
+          "title": "基础配置"
+        },
+        {
+          "level": "初学",
+          "title": "LLM 提供商与模型",
+          "description": "支持的 8 大 LLM 提供商、模型列表、JSON 模式兼容性及自定义配置。",
+          "task": "阅读 src/config/default-models.json 和 src/config/config-store.ts。用表格列出所有提供商及推荐模型，标注 JSON 模式支持。说明 Custom 提供商的配置方式（手动输入 baseUrl + model）。解释 jsonMode 配置项对不同提供商的影响（JSON_MODE_PROVIDERS Set）。引用 supportsJsonMode 函数。"
+        },
+        {
+          "level": "中级",
+          "title": "Embedding 语义搜索配置",
+          "description": "配置 Embedding 模型实现 Wiki 语义搜索，支持 8 个提供商和缓存版本化。",
+          "task": "阅读 src/config/config-store.ts（EMBEDDING_MODELS）和 src/ai/embeddings.ts。用表格列出所有 Embedding 提供商及模型（维度、价格提示）。说明缓存机制：.embeddings.json 文件缓存 + _model 元数据验证 + 内存缓存。解释 cosineSimilarity 计算和 semanticSearch 的完整流程。引用 clearEmbeddingCache。"
+        },
+        {
+          "level": "中级",
+          "title": "Web Fetch 配置",
+          "description": "配置 Web Fetch 工具让 LLM 读取外部文档 URL，基于 Jina Reader API。",
+          "task": "阅读 src/commands/config.ts 中 configureWebFetch 函数和 src/ai/tools.ts 中 fetchWebMarkdown 函数。说明配置项（webFetchDisabled/webFetchBaseUrl/webFetchApiKey）。解释重试策略（指数退避 3 次）和超时机制（AbortController 15s）。说明 getFilteredTools 如何根据 disabled 状态过滤工具。"
+        }
+      ]
+    },
+    {
+      "name": "深入探索",
+      "topics": [
+        {
+          "type": "group",
+          "title": "架构核心"
+        },
+        {
+          "level": "中级",
+          "title": "项目架构全景",
+          "description": "wiki-cli 的模块化架构：CLI 入口、命令层、AI 层、配置层、工具层及数据流。",
+          "task": "以 Mermaid 组件图展示项目模块依赖关系。从 src/cli.ts（Commander 入口）出发，说明四个命令如何调用各自的 command 模块。说明 AI 层（llm-client/tools/embeddings/prompts/ai-session）的职责划分。说明配置层（config-store）被所有命令共享的依赖注入模式。引用 README.md 的项目结构树。"
+        },
+        {
+          "level": "高级",
+          "title": "LLM 客户端设计与流式通信",
+          "description": "LLMClient 的流式/非流式双通道设计、重试策略与 SSE 解析。",
+          "task": "深入阅读 src/ai/llm-client.ts。解释 chatStream（AsyncGenerator）和 chat（Promise）两种接口的设计意图。说明 SSE 流式解析（data: 行分割、JSON 解析、[DONE] 终止）。解释 MAX_RETRIES=3 的指数退避重试策略（isRetryable 判断 5xx/429）。说明 serializeMessage 如何处理 reasoning_content 和 tool_calls。引用 StreamChunk 类型定义。"
+        },
+        {
+          "level": "高级",
+          "title": "两阶段生成：大纲与页面",
+          "description": "generate 命令的 Phase 1 大纲生成（工具调用+JSON 解析）和 Phase 2 并发生成（并发控制+断点续传）。",
+          "task": "阅读 src/commands/generate.ts 的 generateOutline 和 generatePages。说明 Phase 1：collectFullResponse 的 maxIterations=25 循环 + tool calls 处理 + parseOutlineJson 容错解析。说明 Phase 2：runConcurrent 并发池（Set+Promise.race）、page-system.md 模板渲染（availablePages 交叉引用注入）。说明断点续传：TEMP_DIR 检查、_outline.json 存储、已生成文件跳过。"
+        },
+        {
+          "level": "高级",
+          "title": "工具系统：12 个只读工具",
+          "description": "Tool Call 的完整实现：工具定义、执行路由、结果收集与主循环调度。",
+          "task": "阅读 src/ai/tools.ts。用表格列出全部 12 个工具（list_directory/list_files/read_file/search_in_files/git_log/git_show/git_remote_info/dotenv_template/list_wiki_pages/read_wiki/search_wiki/semantic_search/fetch_web_markdown）。说明 toolHandlers 路由表、initTools/getFilteredTools 的运行时配置注入。说明 buildTree/collectFiles 等递归实现的边界条件（排除 node_modules/隐藏文件）。"
+        },
+        {
+          "level": "高级",
+          "title": "Embedding 缓存与语义搜索",
+          "description": "嵌入向量计算的缓存策略：内存缓存、文件缓存、模型版本验证。",
+          "task": "阅读 src/ai/embeddings.ts。说明三次缓存命中流程：in-memory cache（embeddingCache 变量）→ file cache（.embeddings.json 含 _model 元数据）→ 重新计算。解释 CacheData 接口的 _model/_generated 版本控制逻辑。说明 computePageEmbeddings 的分页（取 content.slice(0,8000)）。引用 saveCache 的时间戳格式。"
+        },
+        {
+          "type": "group",
+          "title": "用户体验设计"
+        },
+        {
+          "level": "中级",
+          "title": "Prompt 模板系统",
+          "description": "Prompt 与代码分离的设计：4 个独立 Markdown 模板的加载、渲染和变量注入。",
+          "task": "阅读 src/ai/prompts.ts 和 prompts/ 目录下全部 5 个 .md 文件。说明 renderPrompt 的加载→填充两阶段流程（loadPrompt 读取文件、fillPrompt 正则替换 {{var}}）。用表格列出每个模板的用途和变量列表：outline-system.md/outline-user.md/page-system.md/page-user.md/ai-system.md。说明设计原则：不改代码也能调 prompt。"
+        },
+        {
+          "level": "中级",
+          "title": "会话管理系统",
+          "description": "AI 问答会话的 CRUD、持久化存储与会话列表展示。",
+          "task": "阅读 src/ai/ai-session.ts。说明 Session 接口（id/created/updated/summary/messages）。说明 JSON 文件存储路径 .wiki/sessions/{id}.json。解释 createSession（randomUUID 前 8 位）、loadSession（JSON parse 容错）、saveSession（更新 updated 时间戳）、deleteSession（rm 文件）。说明 printSession 和 showSessionsTable 的显示逻辑。"
+        },
+        {
+          "level": "中级",
+          "title": "进度显示与日志系统",
+          "description": "基于 ora 和 chalk 的终端 UI：旋转加载、色彩日志、工具调用输出。",
+          "task": "阅读 src/utils/progress.ts。说明 createSpinner（ora 封装）、五个日志级别（info/success/warning/error）的色彩方案。解释 logToolCall 和 logToolResult 的格式化输出（工具名+参数预览、结果截断 100 字符）。说明 logStreamContent 在流式输出中的用途。引用 chalk 的颜色映射。"
+        },
+        {
+          "type": "group",
+          "title": "实用工具层"
+        },
+        {
+          "level": "中级",
+          "title": "工作目录解析与远程仓库",
+          "description": "resolveWorkDir 的三种场景：本地目录、远程 URL 克隆、临时模式。",
+          "task": "阅读 src/utils/workspace.ts 和 src/utils/git.ts。说明 resolveWorkDir 的分支逻辑：url 存在时进入远程仓库路径（默认缓存到 ~/.wiki-cli/repos/），否则使用 -C 或 cwd。说明 ensureRepo 的更新策略：已存在则 fetch+merge，不存在则 git clone。说明 urlToDirName 的规范化（去除协议/.git 后缀，替换 /: 为 -）。引用 defaultRepoDir。"
+        },
+        {
+          "level": "中级",
+          "title": "文件系统实用工具",
+          "description": "文件读写、目录操作、时间戳生成与 Slug 转换工具集。",
+          "task": "阅读 src/utils/file.ts。逐个解释 7 个工具函数：ensureDir（mkdir recursive）、writeTextFile（自动创建父目录）、removeDir（rm recursive）、moveDir（rename）、getTimestamp（本地时间 YYYY-MM-DDTHH-mm-ss）、toSlug（中文兼容的 URL slug）。说明 writeTextFile 中的路径分割逻辑（split(sep).slice(0,-1)）。"
+        },
+        {
+          "type": "group",
+          "title": "浏览服务器实现"
+        },
+        {
+          "level": "高级",
+          "title": "内置 HTTP 服务器架构",
+          "description": "Node.js http.createServer 实现的路由分发、MIME 类型、端口发现。",
+          "task": "阅读 src/commands/browse.ts 的服务器代码。说明路由表：/ → HTML 页面、/api/versions → JSON 版本列表、/api/page/{slug} → Markdown 转 HTML、/api/source/{path} → 源码高亮页。说明 findFreePort 的端口扫描机制（尝试 preferred 递增）。说明 mimeTypes 映射和 serveHtml 的完整 HTML 模板（暗色主题 CSS、Mermaid、highlight.js）。"
+        },
+        {
+          "level": "高级",
+          "title": "源码浏览与行号高亮",
+          "description": "/api/source 端点的路径安全校验、代码语法高亮与行号渲染。",
+          "task": "阅读 src/commands/browse.ts 中 /api/source 处理逻辑。说明 sanitizePath 的路径穿越防护（resolve + startsWith 校验）。说明行号渲染：hljs.highlight 逐行处理、line-num 和 line-code 双 span 结构。说明 URL hash 解析（L12-L34 格式）的 JavaScript scrollIntoView 实现。引用 extToLang 的文件扩展名映射表。"
+        },
+        {
+          "level": "高级",
+          "title": "侧栏导航与版本管理",
+          "description": "index.json 解析生成侧栏导航树，版本切换 overlay 与时间戳排序。",
+          "task": "阅读 src/commands/browse.ts 中 loadSidebar、parseIndexJson、buildSidebarHtml、buildVersionsHtml。说明 index.json 的 sections→topics 结构到侧栏列表的映射（group 类型渲染为灰色分组标题）。说明版本列表的排序（sort reverse 按时间戳字符串）。说明版本切换 overlay 的显示/隐藏逻辑和当前版本高亮。引用 slugify 函数。"
+        },
+        {
+          "type": "group",
+          "title": "配置与存储"
+        },
+        {
+          "level": "中级",
+          "title": "配置存储架构",
+          "description": "配置文件的 JSON 持久化、默认模型加载、提供商分类查询。",
+          "task": "阅读 src/config/config-store.ts。说明 CONFIG_PATH 定位（~/.wiki-cli/config.json）。说明 WikiCliConfig 接口的全部配置项（含 LLM/Embedding/WebFetch 三组）。说明 loadDefaultModels 从 default-models.json 加载、getProviders/getModelsByProvider 的分类筛选。说明 EMBEDDING_MODELS 硬编码列表和 getEmbeddingProviders/getEmbeddingModelsByProvider。引用 supportsJsonMode 的 Set 查找。"
+        },
+        {
+          "type": "group",
+          "title": "测试与质量"
+        },
+        {
+          "level": "中级",
+          "title": "测试策略与覆盖",
+          "description": "71 个 Vitest 测试的组织结构、各测试文件覆盖的核心模块。",
+          "task": "阅读 tests/ 目录下所有文件。用表格列出 6 个测试文件及测试范围：config-store.test.ts（配置 CRUD）、file.test.ts（文件操作）、llm-client.test.ts（流式/非流式通信）、outline-parser.test.ts（JSON 大纲解析）、prompts.test.ts（模板渲染）、tools.test.ts（12 个工具）。说明 vitest.config.ts 的配置。说明测试覆盖的设计边界：错误路径、边界输入、网络异常。"
+        }
+      ]
+    }
+  ]
+}

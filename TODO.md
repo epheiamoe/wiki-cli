@@ -8,10 +8,9 @@
   - 未变更页面从上一版本复制
   - 大变更（新主题、重构）才触发全量重新生成
 
-- [ ] **opencode skill**
-  - 将 `tool-call` 暴露的工具包装为 opencode skill
-  - 让 opencode 在问答中能调 `semantic_search`、`read_wiki` 等
-  - Skill 文件放在项目根目录 `skills/` 下
+- [ ] **opencode skill 集成优化**
+  - 根据反馈迭代 `skills/wiki-cli-tools/SKILL.md`
+  - 优化触发条件和描述文本
 
 ## 中期
 

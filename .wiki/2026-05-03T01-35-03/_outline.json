@@ -1,0 +1,182 @@
+```json
+{
+  "sections": [
+    {
+      "name": "入门指南",
+      "topics": [
+        {
+          "level": "初学",
+          "title": "概览",
+          "description": "项目定位、核心功能与工作原理概述，帮助读者快速判断此工具是否适合自己",
+          "task": "阅读 README.md 和 cli.ts，概括项目的核心价值（用LLM自动为任意本地仓库生成结构化Wiki文档）。用表格对比三条命令（config/generate/browse）的职责。强调两阶段生成流程（大纲→页面）和Agent式工具调用的设计理念。控制在300字以内。"
+        },
+        {
+          "level": "初学",
+          "title": "快速开始",
+          "description": "5分钟从安装到生成完整Wiki的端到端流程，含命令示例与预期输出",
+          "task": "按「安装→配置→生成→浏览」顺序编写步骤。每个步骤配完整代码块（npm install -g wiki-cli、wiki-cli config、wiki-cli generate、wiki-cli browse）。用截图级文字描述首次运行各命令的交互体验（如配置的选择列表、生成时的流式输出、浏览器的深色主题界面）。注意提示首次运行需先执行config。"
+        },
+        {
+          "level": "初学",
+          "title": "安装与配置详解",
+          "description": "全局安装、npx运行、交互式配置向导与命令行参数快捷配置方式",
+          "task": "阅读 package.json 的bin字段和src/commands/config.ts。介绍全局安装(npm install -g)和npx两种方式。说明config命令的交互流程：选择provider→选择model→输入API Key→选择语言→配置JSON mode确认。同时展示通过--provider/--model/--api-key/--lang等命令行参数跳过交互的方式。提及配置保存在~/.wiki-cli/config.json。"
+        },
+        {
+          "level": "初学",
+          "title": "支持的LLM提供商一览",
+          "description": "内置支持的7大LLM提供商及对应模型列表，含能力定位与定价提示",
+          "task": "阅读 src/config/default-models.json。用表格列出所有21个模型条目，列包括：提供商、模型名、API地址、描述、定价提示。补充说明：用户可选择Custom模式手动输入任意baseUrl和模型名。提及JSON mode支持的提供商清单（OpenAI/DeepSeek/xAI Grok/Mistral/Kimi），以及Anthropic/Google Gemini暂不支持。"
+        },
+        {
+          "level": "初学",
+          "title": "浏览生成的Wiki",
+          "description": "本地HTTP服务器预览生成的Wiki文档，含侧边栏导航、Markdown渲染与源码引用",
+          "task": "阅读 src/commands/browse.ts 的完整实现。介绍browse命令两个核心功能：1) 自动找到最新生成的wiki目录；2) 在本地启动HTTP服务器并自动打开浏览器。描述页面布局：左侧深色侧边栏（带难度徽章🟢🟡🔴的导航树）、右侧内容区（含语法高亮的Markdown渲染）。重点说明源码引用功能——Wiki中的「来源」链接可点击查看原始代码文件。"
+        },
+        {
+          "level": "中级",
+          "title": "命令行参考手册",
+          "description": "wiki-cli全部命令、子命令、选项参数的完整参考，含用法示例与退出码说明",
+          "task": "阅读 cli.ts 中 program 的所有 command/subcommand 定义。为每条命令（config/generate/browse）编写独立小节，列出所有可用选项、类型、默认值、是否必填。使用表格呈现。末尾补充说明：退出码0表示成功、1表示失败、无参数时自动输出帮助信息。附带至少3个组合用法的示例。"
+        }
+      ]
+    },
+    {
+      "name": "深入探索",
+      "topics": [
+        {
+          "type": "group",
+          "title": "核心架构"
+        },
+        {
+          "level": "中级",
+          "title": "项目结构与模块职责",
+          "description": "仓库目录全景：src分层设计（CLI入口、命令、AI层、工具、配置）、prompts目录、测试目录",
+          "task": "以 src/ 目录为主线，用文字描述各子目录职责：cli.ts（入口+路由）、commands/（三条命令）、ai/（LLM客户端+提示词引擎+工具定义）、config/（持久化配置）、utils/（文件工具+进度日志）。同时提及 prompts/（解耦的提示模板）和 tests/（6个vitest测试文件）。用Mermaid树形图展示依赖关系。注意说明 package.json 的 bin 字段如何将 wiki-cli 映射到 dist/cli.js。"
+        },
+        {
+          "level": "中级",
+          "title": "命令调度与生命周期",
+          "description": "Commander.js 驱动的CLI路由机制，三个子命令的注册与异常处理模式",
+          "task": "阅读 cli.ts。分析 Commander.js 的编程式API使用方式：program.name/description/version，三个 .command().description().action() 链式调用。重点说明每个 action 内部的 try-catch 模式：捕获异常后调用 logError 并 process.exit(1)。指出 generate 和 browse 命令在成功完成后调用 process.exit(0) 以强制退出（因为LLM连接可能挂起）。"
+        },
+        {
+          "type": "group",
+          "title": "配置系统"
+        },
+        {
+          "level": "中级",
+          "title": "配置持久化与模型注册表",
+          "description": "基于文件系统的配置存储、JSON Schema、内置模型注册表与JSON mode自动检测",
+          "task": "阅读 src/config/config-store.ts。分析三个核心函数：loadConfig/saveConfig（读写~/.wiki-cli/config.json）、loadDefaultModels（加载内置模型列表）、supportsJsonMode（提供商标识→boolean/undefined）。说明WikiCliConfig接口的6个字段。解释JSON mode的三态逻辑：已知提供商返回true/false，Custom返回undefined需询问用户。提及getProviders和getModelsByProvider的过滤逻辑。"
+        },
+        {
+          "type": "group",
+          "title": "LLM集成层"
+        },
+        {
+          "level": "高级",
+          "title": "LLM客户端通信协议",
+          "description": "OpenAI兼容API的请求构建、流式与非流式双模式、自动重试与错误处理机制",
+          "task": "阅读 src/ai/llm-client.ts。重点分析：1) buildRequest函数如何将配置转换为fetch请求；2) chatStream异步生成器如何处理SSE（data: line解析，content/reasoning/tool_call三类delta）；3) chat方法处理非流式响应；4) 指数退避重试机制（MAX_RETRIES=3，仅重试5xx和429）。说明ChatMessage接口的role/content/reasoning_content/tool_calls字段如何映射到API请求体。"
+        },
+        {
+          "level": "高级",
+          "title": "工具调用与Agent循环",
+          "description": "LLM可调用的只读代码分析工具集、工具执行引擎与多轮对话循环",
+          "task": "阅读 src/ai/tools.ts。逐一说明8个工具（list_directory/list_files/read_file/search_in_files/git_log/git_show/git_remote_info/dotenv_template）的定义、参数和用途。重点分析 executeToolCall 的分发机制和 toolHandlers 映射表。结合 generate.ts 中的 collectFullResponse 函数，解释30轮maxToolIterations的Agent循环：LLM返回工具调用→执行→结果注入消息→继续请求直到LLM输出最终内容。"
+        },
+        {
+          "level": "中级",
+          "title": "提示词模板引擎",
+          "description": "双模板（system/user）的解耦设计、变量插值机制与prompts目录的文件约定",
+          "task": "阅读 src/ai/prompts.ts 和 prompts/ 目录下4个模板文件。分析 renderPrompt 函数：loadPrompt（从prompts/读取）→ fillPrompt（{{var}}正则替换）。说明两套模板的职责边界：outline-system.md（定义LLM分析框架+可用工具）、outline-user.md（给LLM的具体分析任务）、page-system.md（定义写作风格和格式规范）、page-user.md（当前页的元数据和task指令）。强调变量注入点：workDir/os/pageTitle/audienceLevel/availablePages等。"
+        },
+        {
+          "type": "group",
+          "title": "生成引擎"
+        },
+        {
+          "level": "高级",
+          "title": "大纲生成：代码理解与结构化输出",
+          "description": "第一阶段核心：LLM通过工具调用探索仓库，生成JSON格式的文档大纲，含解析回退策略",
+          "task": "阅读 generate.ts 中的 generateOutline 函数。说明流程：加载system/user提示词→进入LLM对话循环（最多25轮）→LLM可调用8个工具分析仓库→期望输出JSON格式大纲→parseOutlineJson解析。重点分析 parseOutlineJson 的三层回退：stripCodeFence去代码块标记→JSON正则提取→JSON.parse+字段校验。说明Topic接口的section/title/level/slug/description/task/isGroup各字段含义，以及section分组的设计意图。"
+        },
+        {
+          "level": "高级",
+          "title": "页面生成：逐页输出与并行加速",
+          "description": "第二阶段核心：基于大纲逐页生成Markdown，支持串行（流式）和并行（并发）两种模式",
+          "task": "阅读 generate.ts 中的 generatePages 函数。说明核心逻辑：遍历所有非group的topic→为每个topic构建page-system.md和page-user.md提示词→调用LLM生成Markdown内容→写入temp目录。重点分析两个关键机制：1) availablePages 交叉引用注入（将其他页面的slug/title/description注入到page-user.md中，让LLM自动生成超链接）；2) runConcurrent 并发控制（最大10并发）。说明串行模式下每页都有流式输出，并行模式无流式但速度更快。"
+        },
+        {
+        "level": "中级",
+          "title": "断点续传与失败重试",
+          "description": "生成中断后的恢复机制、检查点缓存策略与失败页面的自动重试流程",
+          "task": "阅读 generate.ts 中的 generateCommand 整体流程。说明检查点机制：所有生成的页面先写入 .wiki/temp/ 目录，如果中断后重新运行，会检测temp目录存在并提示「恢复」或「重新开始」。生成完成后再将temp目录重命名为时间戳目录（如 .wiki/2025-01-15T10-30-00/）。分析失败重试循环：generatePages返回失败列表→询问用户是否重试→调用generatePages(...,{retryList:failed})→可无限循环直到用户取消。"
+        },
+        {
+          "type": "group",
+          "title": "浏览服务"
+        },
+        {
+          "level": "中级",
+          "title": "HTTP服务器与路由分发",
+          "description": "基于Node.js原生http模块的静态服务器，含页面API、源码API、.md重定向的多路由设计",
+          "task": "阅读 browse.ts 中 createServer 的回调函数。分析6条路由：/ (首页)、/api/page/:slug (获取页面HTML)、/api/source/:path (获取源码)、.md重定向（302到/api/page）、静态文件服务、404。重点说明 sanitizePath 的路径穿越防护逻辑（resolve后校验是否在PROJECT_ROOT内）。说明 fixContentReferences 如何将「[来源：xxx]」文本替换为可点击的超链接。说明 findFreePort 的端口探测机制。"
+        },
+        {
+          "level": "中级",
+          "title": "侧边栏导航与索引解析",
+          "description": "两种索引格式（JSON/XML）的解析、侧边栏HTML生成与前端交互逻辑",
+          "task": "阅读 browse.ts 中的 loadSidebar/parseIndexJson/parseIndexXml/buildSidebarHtml 函数。说明三层降级策略：优先解析 index.json（新格式）→回退解析 index.md 中的XML标签（旧格式）→最后扫描目录.md文件。分析 sidebar 数据模型 SidebarItem（title/slug/level）。说明前端 loadPage 函数如何通过 fetch('/api/page/'+slug+'.md') 异步加载页面内容并更新DOM。说明 URL hash 用于直接定位到特定页面。"
+        },
+        {
+          "type": "group",
+          "title": "工具链与工程化"
+        },
+        {
+          "level": "中级",
+          "title": "文件系统工具集",
+          "description": "跨平台文件操作封装：递归创建目录、读写文本文件、路径清理、时间戳生成与slug化",
+          "task": "阅读 src/utils/file.ts。逐个说明导出函数：ensureDir（递归mkdir）、writeTextFile（自动创建父目录）、removeDir（递归rm）、moveDir（rename）、getTimestamp（生成文件名安全的时间戳）、toSlug（中文友好的slug生成）。强调这些工具在生成流程中的关键作用：writeTextFile用于写入每页Markdown、moveDir用于将temp目录最终重命名为时间戳目录、removeDir用于清理。注意toSlug支持中文字符保留。"
+        },
+        {
+          "level": "初学",
+          "title": "日志与进度显示系统",
+          "description": "基于ora和chalk的控制台输出美化：spinner动画、彩色日志、工具调用可视化",
+          "task": "阅读 src/utils/progress.ts。说明6个日志函数的使用场景：logInfo（蓝色ℹ，流程提示）、logSuccess（绿色✔，成功）、logWarning（黄色⚠，警告）、logError（红色✖，错误）、logToolCall（品红🔧，工具调用名称+参数）、logToolResult（绿色箭头↳，结果预览）。提及createSpinner包装ora库。说明generate.ts中stream输出时直接process.stdout.write以实现逐字符流式效果。注意chalk v5是ESM-only。"
+        },
+        {
+          "level": "中级",
+          "title": "测试策略与覆盖",
+          "description": "基于Vitest的单元测试布局，6个测试文件覆盖的核心模块与测试模式",
+          "task": "阅读 vitest.config.ts 和 tests/ 目录下所有测试文件。列出6个测试文件并说明每个的测试重点：config-store.test.ts（配置读写）、file.test.ts（文件操作）、llm-client.test.ts（API通信/重试）、outline-parser.test.ts（JSON/XML解析）、prompts.test.ts（模板渲染）、tools.test.ts（工具函数）。说明测试环境为node、使用globals模式。指出测试覆盖了纯函数和高层集成两个层面。"
+        },
+        {
+          "type": "group",
+          "title": "进阶定制"
+        },
+        {
+          "level": "高级",
+          "title": "提示词定制与优化指南",
+          "description": "如何修改prompts目录下的模板文件以调整文档风格、深度和结构，含工程最佳实践",
+          "task": "阅读 prompts/ 目录所有4个模板文件。对比outline-system.md与page-system.md的差异：前者面向代码分析（8个工具+4步分析框架），后者面向文档撰写（Diátaxis框架+叙事节奏+证据标准）。说明关键变量占位符的含义和注入时机。给出定制建议：修改outline-system.md的分析框架可改变文档结构风格，修改page-system.md的内容原则可调整写作质量。警告：修改模板后需同时确保prompts.ts中的变量名一致。"
+        },
+        {
+          "level": "高级",
+          "title": "跨平台兼容与路径处理",
+          "description": "Windows/macOS/Linux三平台的关键差异点：路径分隔符、默认浏览器启动、Shell命令兼容",
+          "task": "搜索项目中所有涉及操作系统判断的代码（search pattern: process.platform）。分析 browse.ts 中浏览器启动命令的跨平台处理：Windows用start、macOS用open、Linux用xdg-open。分析 tools.ts 中 execSync 调用git命令的跨平台风险。分析 generate.ts 中 osInfo（process.platform + process.arch）注入到提示词的用途。说明 toSlug 和 sanitizePath 函数对路径分隔符的处理。提示Node.js >=18的环境要求。"
+        },
+        {
+          "level": "中级",
+          "title": "贡献指南与开发工作流",
+          "description": "本地开发环境搭建、编译构建、运行测试、提交流程与发布准备",
+          "task": "阅读 package.json 的scripts和README.md的开发章节。按顺序写出完整开发流程：git clone→npm install→npm run build（TypeScript编译）→npm test（Vitest测试）。说明npm link或node dist/cli.js用于本地测试。指出src/目录TypeScript源码→dist/目录JavaScript输出的映射关系。说明prepublishOnly钩子自动执行build。提示ESM模块系统的注意事项（import需加.js后缀）。"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,186 @@
+```json
+{
+  "sections": [
+    {
+      "name": "入门指南",
+      "topics": [
+        {
+          "level": "初学",
+          "title": "概览",
+          "description": "项目定位、核心功能与设计理念概述，帮助读者快速判断工具是否适合自己",
+          "task": "阅读 README.md 和 src/cli.ts，用表格对比四条命令（config/generate/browse/ai）的功能定位。说明项目核心价值：用 LLM 自动为任意代码仓库生成结构化 Wiki 文档。强调跨平台、流式输出、断点续传等关键特性。列出技术栈（TypeScript、Commander.js、Inquirer、Marked、Highlight.js）。"
+        },
+        {
+          "level": "初学",
+          "title": "快速开始",
+          "description": "从零开始 5 分钟体验完整流程：安装、配置 LLM、生成文档、本地浏览",
+          "task": "按安装→配置→生成→浏览的顺序写出完整操作步骤。每步配命令行代码块和预期输出说明。配置步骤使用 DeepSeek 为例（免费 API），给出典型参数值。生成步骤说明两阶段流程（大纲+页面）和流式输出效果。浏览步骤说明默认浏览器自动打开和左侧导航栏操作。结尾给出常见安装问题排除。"
+        },
+        {
+          "type": "group",
+          "title": "命令参考"
+        },
+        {
+          "level": "初学",
+          "title": "配置命令：wiki-cli config",
+          "description": "交互式配置 LLM 提供商、模型、API 密钥和文档语言，支持命令行参数快速配置",
+          "task": "阅读 src/commands/config.ts 和 src/config/config-store.ts，先展示交互式配置的完整操作流程截图式说明，再给出 `--provider --model --api-key --lang` 参数批量配置方式。解释 CLI 参数优先逻辑。说明配置持久化路径 `~/.wiki-cli/config.json` 的 JSON 结构。末尾列出所有内置提供商和模型供查询。"
+        },
+        {
+          "level": "中级",
+          "title": "生成命令：wiki-cli generate",
+          "description": "两阶段 Wiki 生成流程详解：LLM 分析仓库生成大纲，再逐页生成文档内容",
+          "task": "阅读 src/commands/generate.ts，聚焦 `generateCommand` 函数整体流程。分阶段说明：Phase 1 调用 LLM 分析仓库结构、生成 JSON 格式大纲；Phase 2 遍历大纲逐页生成 Markdown。解释 `collectFullResponse` 函数的工具调用循环机制（最多 30 轮迭代）。说明 checkpoint 存于 `.wiki/temp/` 的断点续传逻辑。说明并行生成选项和重试机制。"
+        },
+        {
+          "level": "初学",
+          "title": "浏览命令：wiki-cli browse",
+          "description": "在本地启动 HTTP 服务，以浏览器方式浏览生成的 Wiki 文档，含侧边栏导航和 Markdown 渲染",
+          "task": "阅读 src/commands/browse.ts，描述 `browseCommand` 启动流程：扫描 `.wiki/` 目录找到最新版本、自动寻找空闲端口、启动 Node.js HTTP 服务器、自动打开浏览器。解释左侧导航栏从 `index.json` 加载路径和主题层级。说明右键点击代码引用可查看源码。说明页面间交叉引用链接自动跳转功能。展示版本切换界面。"
+        },
+        {
+          "level": "中级",
+          "title": "AI 交互命令：wiki-cli ai",
+          "description": "交互式 AI 问答模式，可结合生成的 Wiki 和源码探索工具，与 LLM 深度讨论代码库",
+          "task": "阅读 src/commands/ai.ts 和 src/ai/ai-session.ts，先展示交互模式下的 `/help` 斜杠命令系统（save/clear/switch/wiki 等）。说明会话持久化机制：每次问答自动保存到 `.wiki/sessions/`，可恢复。解释工具集动态切换逻辑：有 Wiki 时启用 `list_wiki_pages`/`read_wiki` 工具，无 Wiki 时引导用户先生成。说明单次问答模式（传参 `question`）和流式输出的实现。"
+        },
+        {
+          "type": "group",
+          "title": "配置管理"
+        },
+        {
+          "level": "初学",
+          "title": "LLM 提供商与模型选择",
+          "description": "内置 7 家 LLM 提供商共 21 个模型的完整列表、定价提示及选择建议",
+          "task": "阅读 src/config/default-models.json，用表格列出所有 7 家提供商（OpenAI/Gemini/Anthropic/xAI/DeepSeek/Kimi/Mistral）及其对应模型。每行包含 model 名、description、pricingHint、baseUrl。根据 description 给出推荐场景（如 Claude Opus 适合复杂分析、DeepSeek Flash 性价比高）。说明 Custom 模式支持任意兼容 OpenAI API 格式的第三方服务。"
+        },
+        {
+          "level": "中级",
+          "title": "配置存储与高级选项",
+          "description": "配置文件的存储路径、JSON 结构详解、JSON 模式开关的作用与注意事项",
+          "task": "阅读 src/config/config-store.ts，重点说明 `WikiCliConfig` 接口各字段含义。解释 `jsonMode` 的作用：已知支持 JSON 模式的提供商自动启用，Custom 需用户确认。说明 `findFreePort` 端口冲突处理策略。解释 `supportsJsonMode` 函数的判断逻辑和未知提供商的处理。给出典型配置文件的完整示例，标注各字段可选性。说明 `.wiki-cli/` 目录的创建时机和权限注意事项。"
+        },
+        {
+          "type": "group",
+          "title": "输出理解"
+        },
+        {
+          "level": "初学",
+          "title": "生成结果说明",
+          "description": "Wiki 输出的目录结构、文件格式说明、index.json 索引文件结构以及版本管理机制",
+          "task": "说明 `.wiki/<timstamp>/` 目录结构：每个 `.md` 文件对应一个页面主题，`index.json` 记录完整目录元数据。展示 `index.json` 的 JSON schema（sections → topics，每 topic 含 level/title/description/task）。解释时间戳格式 `YYYY-MM-DDTHH-mm-ss` 和版本排序逻辑。说明 `_outline.json` 临时文件的用途。交代 `.wiki/temp` 和 `.wiki/sessions` 两个特殊子目录的用途。"
+        }
+      ]
+    },
+    {
+      "name": "深入探索",
+      "topics": [
+        {
+          "type": "group",
+          "title": "架构总览"
+        },
+        {
+          "level": "中级",
+          "title": "整体架构与模块划分",
+          "description": "仓库的目录结构、四大模块（CLI/命令/AI层/工具库）的职责划分与依赖关系",
+          "task": "基于 src/ 目录结构画出模块依赖关系图（Mermaid）。说明四层架构：CLI 入口层（cli.ts）、命令实现层（commands/）、AI 能力层（ai/）、基础设施层（config/ + utils/）。强调 ai/ 是核心、commands/ 是编排者、utils/ 是辅助者。用表格列出每个源文件及其职责、关键导出。说明跨层调用方向：CLI → Commands → AI → Utils。说明 prompts/ 目录的解耦设计。"
+        },
+        {
+          "level": "中级",
+          "title": "CLI 入口点与命令注册",
+          "description": "使用 Commander.js 注册四条命令的机制、参数解析、错误处理与自动帮助",
+          "task": "阅读 src/cli.ts，说明 `new Command()` 创建程序实例后如何通过 `.command()` 链式注册四条命令。展示每条命令的 option 定义和 action 回调的异步错误处理模式（try-catch + logError + exit(1)）。说明 `--version` 版本标识和默认无参数时输出帮助。分析 `.action` 参数注入顺序与 Commander.js 的 option 解析规则。对比四条命令的同步/异步差异。"
+        },
+        {
+          "type": "group",
+          "title": "AI 通信层"
+        },
+        {
+          "level": "高级",
+          "title": "LLM 客户端实现",
+          "description": "兼容 OpenAI API 的流式/非流式客户端，含重试机制、推理内容支持、工具调用编排",
+          "task": "精读 src/ai/llm-client.ts，重点分析 `LLMClient` 类的 `chatStream` 和 `chat` 两个公开方法。说明 SSE 流式解析逻辑：逐行读取 `data:` 前缀，解析 JSON delta 块，分发 content/reasoning/tool_call 事件。说明 `buildRequest` 函数如何组装请求体（含 stream/tools/jsonMode 开关）。分析重试策略：最大 3 次、指数退避、仅重试 5xx 和 429。解释 `stripCodeFence` 工具函数。说明 `serializeMessage` 的 null content 删除逻辑。"
+        },
+        {
+          "level": "高级",
+          "title": "工具系统与函数调用",
+          "description": "10 个只读工具的 OpenAI Function Calling 定义、实现和动态分发机制",
+          "task": "精读 src/ai/tools.ts，先列出全部 10 个工具的 name、description、parameters 表格。说明 `ToolDefinition` 接口符合 OpenAI Function Calling 规范。分析 `executeToolCall` 分发函数如何通过 `toolHandlers` 映射表实现动态调用。重点分析 `listDirectory` 和 `buildTree` 的递归遍历逻辑、`searchInFiles` 的目录搜索实现、Wiki 工具 `findLatestWikiDir` 的版本排序策略。说明 `ToolResult` 的 type/data 双字段约定。解释不同工具之间的协作场景（如先 list_directory 再 read_file）。"
+        },
+        {
+          "level": "中级",
+          "title": "提示词模板引擎",
+          "description": "基于文件系统的 Mustache 风格模板加载与渲染，支持变体注入，提示词与代码逻辑分离",
+          "task": "阅读 src/ai/prompts.ts 和 prompts/ 目录下的五个模板文件。说明 `renderPrompt` 流程：loadPrompt 读取文件 → fillPrompt 替换 `{{var}}` 占位符。分析每个模板的用途：ai-system.md（AI 聊天系统提示）、outline-system/user.md（大纲生成）、page-system/user.md（页面生成）。说明 prompts/ 独立于 src/ 的设计意图：允许开发者在不修改代码的情况下定制提示词。举例说明变量注入的运行时绑定。"
+        },
+        {
+          "level": "中级",
+          "title": "AI 会话管理",
+          "description": "交互式问答的会话持久化，支持创建、加载、列表和删除会话，用于 wiki-cli ai 命令",
+          "task": "阅读 src/ai/ai-session.ts，说明 `Session` 接口结构（id/created/updated/summary/messages）。分析 `createSession` 用 8 字符 UUID 生成唯一 ID。说明 `listSessions` 按更新时间降序排序。解释 `printSession` 和 `showSessionsTable` 的终端输出格式。重点说明 `loadSession` 和 `saveSession` 的文件 I/O 实现。说明会话文件存储在 `.wiki/sessions/<id>.json`。对比会话管理与断点续传 checkpoint 机制的区别。"
+        },
+        {
+          "type": "group",
+          "title": "生成引擎"
+        },
+        {
+          "level": "高级",
+          "title": "大纲生成阶段",
+          "description": "Phase 1 详解：LLM 使用工具分析仓库结构，经最多 25 轮对话迭代生成 JSON 格式文档大纲",
+          "task": "精读 src/commands/generate.ts 中 `generateOutline` 函数。分析 LLM 多轮对话迭代逻辑：每轮发送 system+user 消息，解析返回 JSON，失败则继续对话直至 JSON 合法或达上限。说明工具集如何帮助 LLM 理解仓库（list_directory/read_file/search_in_files/git_log 等）。说明 `parseOutlineJson` 的容错解析策略：stripCodeFence → 正则提取 JSON → JSON.parse → 验证 sections/topics 结构。解释 legacy `brief` 字段到 `description`+`task` 的兼容映射。说明 `_outline.json` 的临时持久化。"
+        },
+        {
+          "level": "高级",
+          "title": "页面生成与并行控制",
+          "description": "Phase 2 详解：遍历大纲逐页生成 Markdown，支持串行流式输出和并行并发控制两种模式",
+          "task": "精读 src/commands/generate.ts 中 `generatePages` 和 `runConcurrent` 函数。说明 `PageGenOptions` 接口中的 parallel/concurrency/retryList 三个参数含义。分析每页生成流程：读取 page-system/user.md 模板 → 注入变量（pageTitle/audienceLevel/pageTask/availablePages）→ 调用 `collectFullResponse` → 写入 `temp/<slug>.md`。重点分析 `runConcurrent` 的并发控制实现（固定并发数、Promise.race 调度）。说明 `availablePages` 交叉引用列表的构建逻辑。说明 `generateIndex` 从 topics 重建 index.json 的流程。"
+        },
+        {
+          "level": "中级",
+          "title": "断点续传与重试机制",
+          "description": "生成中断后的恢复策略：检测临时目录、用户选择恢复或重新开始、失败页面重试循环",
+          "task": "阅读 src/commands/generate.ts 中 `generateCommand` 开头部分和 retry 循环。分析 checkpoint 检测逻辑：检查 `.wiki/temp/` 是否存在，存在则通过 inquirer 询问 resume/fresh。说明恢复时跳过已存在的 `.md` 文件（`existsSync(pagePath)` 检查）。分析 while 循环的重试逻辑：收集 failed 列表 → 用户确认重试 → 传入 retryList 再次调用 generatePages。说明并发模式下错误收集和中断处理。对比 temp 目录与最终版本目录的 `moveDir` 迁移策略。"
+        },
+        {
+          "type": "group",
+          "title": "浏览服务"
+        },
+        {
+          "level": "高级",
+          "title": "HTTP 服务与前端渲染",
+          "description": "纯 Node.js HTTP 服务器实现，含侧边栏导航、Markdown 渲染、语法高亮和暗色主题 UI",
+          "task": "精读 src/commands/browse.ts 中 `browseCommand` 和 `serveHtml` 函数。分析 HTTP 路由表：`/` 主页（SSR HTML）、`/api/page/` 页面内容 API、`/api/source/` 源码 API。说明 `loadSidebar` 如何从 index.json 解析导航树并调用 `buildSidebarHtml` 生成 HTML。分析嵌入的 HTML/CSS/JS 模板结构：暗色 GitHub 风格、Flexbox 双栏布局、Highlight.js 语法高亮。说明前端交互逻辑：loadPage 通过 fetch 获取渲染后的 HTML 内容、hljs.highlightAll 触发高亮。说明 `fixContentReferences` 的源码引用链接转换。"
+        },
+        {
+          "level": "中级",
+          "title": "版本切换与源代码预览",
+          "description": "多版本 Wiki 的历史版本切换弹窗，以及代码库源代码文件的在线预览功能",
+          "task": "阅读 src/commands/browse.ts 中版本管理和源码预览相关函数。分析版本发现逻辑：扫描 `.wiki/` 下所有时间戳目录，排序取最新。说明 `/api/versions` API 返回版本列表和当前版本。分析版本切换 UI：overlay 弹窗显示版本列表，点击切换 URL 参数 `?version=<ts>` 重新加载。分析源码预览 `/api/source/` 路由：`sanitizePath` 防止目录穿越攻击、`extToLang` 映射文件扩展名到代码语言、独立 HTML 页面用 Highlight.js 渲染。说明 `findFreePort` 从 3000 开始递增搜索可用端口的实现。"
+        },
+        {
+          "type": "group",
+          "title": "扩展与测试"
+        },
+        {
+          "level": "中级",
+          "title": "添加新 LLM 提供商",
+          "description": "三步扩展法：在 default-models.json 添加模型、确定 JSON 模式支持、编写集成测试",
+          "task": "阅读 src/config/default-models.json 和 src/config/config-store.ts 中的 `supportsJsonMode` 函数。说明添加新提供商的三个步骤：1) 在 default-models.json 添加 ModelEntry（provider/model/baseUrl/description/pricingHint）；2) 若提供商支持 JSON 模式则更新 JSON_MODE_PROVIDERS Set；3) 运行测试验证 `getProviders` 和 `getModelsByProvider`。说明 Custom 模式的通用兼容性（任何 OpenAI API 格式的端点）。举例说明添加一个虚构提供商的全过程。"
+        },
+        {
+          "level": "中级",
+          "title": "编写自定义提示词模板",
+          "description": "prompts/ 目录模板格式详解，变量注入规则，以及如何定制系统提示词影响生成质量",
+          "task": "阅读 prompts/ 目录下五个 .md 文件和 src/ai/prompts.ts。说明 `{{var}}` 双花括号变量语法和 `fillPrompt` 的正则替换实现。逐个分析每个模板的设计意图：outline-system.md 定义分析框架（愿景→架构→受众→JSON输出）、outline-user.md 传入仓库元数据、page-system.md 定义写作风格（Diátaxis框架、Mermaid图表、证据标准）、page-user.md 传入具体页面参数和交叉引用列表。说明如何通过修改模板影响 LLM 输出风格和内容深度。给出优化提示词的实用建议。"
+        },
+        {
+          "level": "中级",
+          "title": "测试策略与单元测试",
+          "description": "使用 Vitest 编写的 6 个测试文件覆盖策略：核心功能测试、边界条件、Mock 网络请求",
+          "task": "阅读 tests/ 目录下全部 6 个测试文件。分类说明测试覆盖：config-store.test.ts（模型数据完整性）、file.test.ts（文件操作和 slugify 工具函数）、llm-client.test.ts（使用 vi.fn mock fetch，覆盖流式/非流式/重试/错误）、outline-parser.test.ts（JSON 解析容错和兼容性）、prompts.test.ts（模板渲染边界条件）、tools.test.ts（10 个工具的输入输出验证和错误路径）。重点分析 llm-client.test.ts 的 `createMockStream` 辅助函数如何模拟 SSE 流。说明 vitest.config.ts 的配置要点。"
+        }
+      ]
+    }
+  ]
+}
+```
