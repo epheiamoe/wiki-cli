@@ -9,8 +9,6 @@ import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
 import { defaultRepoDir } from '../utils/workspace.js';
 
-const PROJECT_ROOT = resolve(process.cwd());
-
 export interface BrowseOptions {
   path?: string;
   url?: string;
@@ -21,11 +19,9 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
 
   if (options?.path) {
     wikiDir = resolve(options.path);
-    // If it points to a version dir directly, use the parent .wiki
     if (existsSync(wikiDir) && basename(dirname(wikiDir)) === '.wiki') {
       wikiDir = dirname(wikiDir);
     }
-    // If it points to a project dir, look for .wiki inside
     if (existsSync(wikiDir) && basename(wikiDir) !== '.wiki') {
       const nested = join(wikiDir, '.wiki');
       if (existsSync(nested)) wikiDir = nested;
@@ -34,7 +30,7 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
     const repoDir = defaultRepoDir(options.url);
     wikiDir = join(repoDir, '.wiki');
   } else {
-    wikiDir = join(PROJECT_ROOT, '.wiki');
+    wikiDir = join(resolve(process.cwd()), '.wiki');
   }
 
   if (!existsSync(wikiDir)) {
@@ -42,6 +38,8 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
     logError('Run "wiki-cli generate" first or specify correct path.');
     process.exit(1);
   }
+
+  const projectRoot = resolve(wikiDir, '..');
 
   const entries = await readdir(wikiDir, { withFileTypes: true });
   const timestamps = entries
@@ -122,13 +120,13 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
 
       if (pathname.startsWith('/api/source/')) {
         const rawPath = decodeURIComponent(pathname.slice(12));
-        const safePath = sanitizePath(rawPath);
+        const safePath = sanitizePath(rawPath, projectRoot);
         if (!safePath) {
           res.writeHead(403);
           res.end('Forbidden');
           return;
         }
-        const fullPath = join(PROJECT_ROOT, safePath);
+        const fullPath = join(projectRoot, safePath);
         if (!existsSync(fullPath)) {
           res.writeHead(404);
           res.end('Source file not found');
@@ -329,11 +327,11 @@ function parseIndexXml(content: string): SidebarItem[] {
   return items;
 }
 
-function sanitizePath(rawPath: string): string | null {
+function sanitizePath(rawPath: string, root: string): string | null {
   const cleaned = rawPath.replace(/^[/\\]+/, '');
   const normalized = normalize(cleaned).replace(/^(\.\.(\/|\\))+/g, '');
-  const resolved = resolve(PROJECT_ROOT, normalized);
-  if (!resolved.startsWith(PROJECT_ROOT + sep) && resolved !== PROJECT_ROOT) return null;
+  const resolved = resolve(root, normalized);
+  if (!resolved.startsWith(root + sep) && resolved !== root) return null;
   return normalized;
 }
 
