@@ -16,9 +16,11 @@
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^12.1.0",
+    "highlight.js": "^11.11.0",
     "inquirer": "^12.3.0",
     "marked": "^15.0.4",
-    "highlight.js": "^11.11.0",
+    "marked-highlight": "^2.2.4",
+    "mermaid": "^11.14.0",
     "ora": "^8.1.1"
   },
   "devDependencies": {

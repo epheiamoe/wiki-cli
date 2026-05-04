@@ -1,9 +1,11 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { join, extname, resolve, sep, normalize, basename } from 'node:path';
+import { join, extname, resolve, sep, normalize, basename, dirname as pathDirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
@@ -13,6 +15,19 @@ import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
 import { loadConfig } from '../config/config-store.js';
 import { initTools, getFilteredTools, executeToolCall } from '../ai/tools.js';
 import { createSession, loadSession, saveSession } from '../ai/ai-session.js';
+
+const require = createRequire(import.meta.url);
+
+// Use highlight.js server-side for code blocks in markdown
+marked.use(markedHighlight({
+  langPrefix: 'hljs language-',
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+}));
 import { renderPrompt } from '../ai/prompts.js';
 
 export interface BrowseOptions {
@@ -376,6 +391,27 @@ document.addEventListener('DOMContentLoaded', function(){
         return;
       }
 
+      // Serve vendored static assets (mermaid, highlight.js CSS)
+      if (pathname.startsWith('/static/')) {
+        const name = pathname.slice(8);
+        const staticMap: Record<string, string> = {
+          'github-dark.min.css': join(pathDirname(require.resolve('highlight.js/package.json')), 'styles', 'github-dark.min.css'),
+          'mermaid.min.js': join(pathDirname(require.resolve('mermaid/package.json')), 'dist', 'mermaid.min.js'),
+        };
+        const assetPath = staticMap[name];
+        if (assetPath && existsSync(assetPath)) {
+          const ext = extname(assetPath);
+          const contentType = mimeTypes[ext] || 'application/octet-stream';
+          const content = await readFile(assetPath);
+          res.writeHead(200, { 'Content-Type': contentType });
+          res.end(content);
+          return;
+        }
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+
       const filePath = join(wikiPath, pathname);
       if (existsSync(filePath) && !filePath.endsWith('.md')) {
         const ext = extname(filePath);
@@ -575,7 +611,7 @@ async function serveHtml(
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wiki</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="/static/github-dark.min.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; height: 100vh; background: #0d1117; color: #c9d1d9; justify-content: center; }
@@ -677,21 +713,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     ${versionsHtml}
   </div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 const currentVersion = ${JSON.stringify(currentVersion)};
 const wikiSlugs = ${JSON.stringify(slugs)};
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-
+// Navigation functions — defined first so sidebar works even if mermaid fails
 async function loadPage(encodedSlug) {
   const slug = decodeURIComponent(encodedSlug);
   const res = await fetch('/api/page/' + slug + '.md?version=' + currentVersion);
   const html = await res.text();
   document.getElementById('content').innerHTML = html;
   document.getElementById('content').scrollTop = 0;
-  hljs.highlightAll();
   try { await mermaid.run({ nodes: document.querySelectorAll('.mermaid') }); } catch {}
   history.replaceState(null, '', '#' + slug);
 }
@@ -708,8 +740,9 @@ function hideVersions() {
   document.getElementById('versionOverlay').classList.remove('show');
 }
 
+try { mermaid.initialize({ startOnLoad: false, theme: 'dark' }); } catch {}
+
 document.addEventListener('DOMContentLoaded', function() {
-  hljs.highlightAll();
   try { mermaid.run({ nodes: document.querySelectorAll('.mermaid') }); } catch {}
 
   if (location.hash) {
@@ -842,6 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+<script src="/static/mermaid.min.js"></script>
 </body>
 </html>`;
 
