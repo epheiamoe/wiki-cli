@@ -176,7 +176,8 @@ async function chatOnce(
   client: LLMClient,
   messages: ChatMessage[],
   tools: typeof toolDefinitions,
-  userInput: string
+  userInput: string,
+  isCancelled?: () => boolean
 ): Promise<string | null> {
   messages.push({ role: 'user', content: userInput });
 
@@ -186,6 +187,12 @@ async function chatOnce(
   const maxIterations = 50;
 
   for (let iter = 0; iter < maxIterations; iter++) {
+    if (isCancelled?.()) {
+      if (accumulatedContent) {
+        messages.push({ role: 'assistant', content: accumulatedContent, reasoning_content: accumulatedReasoning || undefined });
+      }
+      return accumulatedContent || null;
+    }
     let hasToolCalls = false;
     let currentContent = '';
     let currentReasoning = '';
@@ -197,6 +204,13 @@ async function chatOnce(
 
     try {
       for await (const chunk of streamIter) {
+        if (isCancelled?.()) {
+          if (currentContent) accumulatedContent += currentContent;
+          if (currentReasoning) accumulatedReasoning += currentReasoning;
+          messages.push({ role: 'assistant', content: currentContent || null, reasoning_content: currentReasoning || null });
+          console.log(chalk.dim('\n⏹ (interrupted)'));
+          return currentContent || null;
+        }
         if (chunk.type === 'reasoning' && chunk.reasoning_content) {
           currentReasoning += chunk.reasoning_content;
           if (!reasoningStarted) {
@@ -331,7 +345,13 @@ async function interactiveLoop(
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: '' });
 
   while (true) {
-    const line = await rl.question(chalk.green('You > '));
+    let line: string;
+    try {
+      line = await rl.question(chalk.green('You > '));
+    } catch {
+      await exitSession(session);
+      break;
+    }
     const input = line.trim();
     if (!input) continue;
 
@@ -342,8 +362,7 @@ async function interactiveLoop(
       const command = parts[0];
 
       if (command === 'exit' || command === 'quit') {
-        await saveSession(session);
-        logSuccess(`会话已保存 (${session.id})`);
+        await exitSession(session);
         break;
       }
 
@@ -356,9 +375,24 @@ async function interactiveLoop(
   /session        显示当前会话 ID
   /sessions       列出所有会话
   /switch <id>    切换会话
+  /undo           撤回上一条对话
   /wiki           生成 Wiki
   /new            新会话
   /help           显示帮助`);
+        continue;
+      }
+
+      if (command === 'undo') {
+        let userIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'user') { userIdx = i; break; }
+        }
+        if (userIdx > 0) {
+          messages.splice(userIdx);
+          logSuccess('已撤销上一条对话');
+        } else {
+          logWarning('没有可撤销的消息');
+        }
         continue;
       }
 
@@ -416,10 +450,15 @@ async function interactiveLoop(
       continue;
     }
 
-    // Normal chat
-    const reasoningStarted = false;
-    const contentStarted = false;
-    await chatOnce(client, messages, tools, input);
+    // Normal chat with Ctrl+C interrupt support
+    let streamingCancelled = false;
+    const sigHandler = () => { streamingCancelled = true; };
+    process.on('SIGINT', sigHandler);
+    try {
+      await chatOnce(client, messages, tools, input, () => streamingCancelled);
+    } finally {
+      process.removeListener('SIGINT', sigHandler);
+    }
 
     session.messages = messages.slice(1);
     session.summary = session.messages.find(m => m.role === 'user' && !m.content?.startsWith('/'))?.content?.slice(0, 60) || session.summary;
@@ -427,4 +466,10 @@ async function interactiveLoop(
   }
 
   rl.close();
+}
+
+async function exitSession(session: Session): Promise<void> {
+  await saveSession(session);
+  logSuccess(`会话已保存 (${session.id})`);
+  console.log(chalk.dim(`to continue, run: wiki-cli ai --session ${session.id}`));
 }

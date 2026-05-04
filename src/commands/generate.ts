@@ -180,7 +180,7 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
   const maxIterations = 25;
 
   for (let i = 0; i < maxIterations; i++) {
-    logInfo(`LLM round ${i + 1} (streaming below)...`);
+    logInfo(`Phase 1 / Round ${i + 1} (streaming below)...`);
 
     try {
       const fullContent = await collectFullResponse(client, messages, config, true, useJsonMode);
