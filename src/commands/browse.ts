@@ -9,7 +9,7 @@ import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
 import { LLMClient } from '../ai/llm-client.js';
 import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
-import { defaultRepoDir } from '../utils/workspace.js';
+import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
 import { loadConfig } from '../config/config-store.js';
 import { initTools, getFilteredTools, executeToolCall } from '../ai/tools.js';
 import { createSession, loadSession, saveSession } from '../ai/ai-session.js';
@@ -33,7 +33,7 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
       if (existsSync(nested)) wikiDir = nested;
     }
   } else if (options?.url) {
-    const repoDir = defaultRepoDir(options.url);
+    const repoDir = findExistingRepoDir(options.url) || defaultRepoDir(options.url);
     wikiDir = join(repoDir, '.wiki');
   } else {
     wikiDir = join(resolve(process.cwd()), '.wiki');

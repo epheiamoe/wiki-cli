@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { logInfo, logWarning, logError } from '../utils/progress.js';
-import { defaultRepoDir } from '../utils/workspace.js';
+import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
 import chalk from 'chalk';
 import { basename } from 'node:path';
 
@@ -20,7 +20,7 @@ export async function statusCommand(options: StatusOptions = {}): Promise<void> 
   let wikiDir: string;
 
   if (options.url) {
-    const repoDir = defaultRepoDir(options.url);
+    const repoDir = findExistingRepoDir(options.url) || defaultRepoDir(options.url);
     wikiDir = join(repoDir, '.wiki');
   } else if (options.dir) {
     const base = resolve(options.dir);

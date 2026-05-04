@@ -384,18 +384,17 @@ async function dotenvTemplate(): Promise<ToolResult> {
   }
 }
 
-const WIKI_DIR = resolve(process.cwd(), '.wiki');
-
 async function findLatestWikiDir(): Promise<string | null> {
   try {
-    if (!existsSync(WIKI_DIR)) return null;
-    const entries = await readdir(WIKI_DIR, { withFileTypes: true });
+    const wikiDir = resolve(process.cwd(), '.wiki');
+    if (!existsSync(wikiDir)) return null;
+    const entries = await readdir(wikiDir, { withFileTypes: true });
     const dirs = entries
       .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
       .map(e => e.name)
       .sort()
       .reverse();
-    return dirs.length > 0 ? join(WIKI_DIR, dirs[0]) : null;
+    return dirs.length > 0 ? join(wikiDir, dirs[0]) : null;
   } catch {
     return null;
   }

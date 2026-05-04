@@ -1,7 +1,7 @@
-import { resolve, join, basename } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, existsSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { ensureRepo } from './git.js';
@@ -14,7 +14,18 @@ export interface WorkDirResult {
   cleanup?: () => Promise<void>;
 }
 
-const REPOS_DIR = join(homedir(), '.wiki-cli', 'repos');
+const DEFAULT_REPO_DIR = join(homedir(), '.wiki-cli', 'repos');
+
+function getRepoDirs(): string[] {
+  try {
+    const cfgPath = join(homedir(), '.wiki-cli', 'config.json');
+    if (existsSync(cfgPath)) {
+      const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
+      if (cfg.repoDirs?.length) return cfg.repoDirs;
+    }
+  } catch { /* ignore */ }
+  return [DEFAULT_REPO_DIR];
+}
 
 function urlToDirName(url: string): string {
   const cleaned = url
@@ -25,7 +36,16 @@ function urlToDirName(url: string): string {
 }
 
 export function defaultRepoDir(url: string): string {
-  return join(REPOS_DIR, urlToDirName(url));
+  return join(getRepoDirs()[0], urlToDirName(url));
+}
+
+export function findExistingRepoDir(url: string): string | null {
+  const dirName = urlToDirName(url);
+  for (const base of getRepoDirs()) {
+    const candidate = join(base, dirName);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 export async function resolveWorkDir(options: {
@@ -39,7 +59,7 @@ export async function resolveWorkDir(options: {
   const { dir, url, output, branch, depth, temp } = options;
 
   if (url) {
-    let targetDir: string;
+    let targetDir: string = '';
 
     if (temp) {
       targetDir = mkdtempSync(join(tmpdir(), 'wiki-cli-'));
@@ -47,8 +67,15 @@ export async function resolveWorkDir(options: {
       targetDir = resolve(output);
       await mkdir(targetDir, { recursive: true });
     } else {
-      targetDir = defaultRepoDir(url);
-      await mkdir(REPOS_DIR, { recursive: true });
+      const existing = findExistingRepoDir(url);
+      if (existing) {
+        targetDir = existing;
+        logInfo(`Found cached repo at ${targetDir}`);
+      } else {
+        targetDir = defaultRepoDir(url);
+        const parent = dirname(targetDir);
+        if (!existsSync(parent)) await mkdir(parent, { recursive: true });
+      }
     }
 
     const repoResult = await ensureRepo(url, targetDir, branch, depth);

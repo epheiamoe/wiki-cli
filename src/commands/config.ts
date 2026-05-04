@@ -1,7 +1,9 @@
 import inquirer from 'inquirer';
 import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath, supportsJsonMode, getEmbeddingProviders, getEmbeddingModelsByProvider } from '../config/config-store.js';
 import type { WikiCliConfig } from '../config/config-store.js';
-import { logSuccess } from '../utils/progress.js';
+import { logSuccess, logInfo } from '../utils/progress.js';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?: boolean; embeddingOnly?: boolean }>): Promise<void> {
   const models = loadDefaultModels();
@@ -38,6 +40,7 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
           { name: 'LLM (provider / model / API key)', value: 'llm' },
           { name: 'Embedding (semantic search model)', value: 'embedding' },
           { name: 'Web Fetch (let AI read documentation URLs)', value: 'webFetch' },
+          { name: 'Repos Directory (where to store cloned repos)', value: 'repos' },
           { name: 'Both', value: 'both' },
           { name: 'Done, quit', value: 'quit' },
         ],
@@ -57,6 +60,10 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
 
   if (mode === 'webFetch') {
     await configureWebFetch(fullConfig);
+  }
+
+  if (mode === 'repos') {
+    await configureRepoDirs(fullConfig);
   }
 
   if (mode === 'both' && !existing) {
@@ -251,4 +258,66 @@ async function configureWebFetch(config: WikiCliConfig): Promise<void> {
     },
   ]);
   config.webFetchApiKey = key || undefined;
+}
+
+async function configureRepoDirs(config: WikiCliConfig): Promise<void> {
+  const defaultDir = join(homedir(), '.wiki-cli', 'repos');
+  const current = config.repoDirs?.length ? config.repoDirs : [defaultDir];
+
+  while (true) {
+    const lines = current.map((d, i) => `  ${i === 0 ? '📁' : '  '} ${d}`).join('\n');
+    console.log(`\n当前仓库目录${current.length > 1 ? `（${current.length} 个，首项为默认）` : '：'}\n${lines}\n`);
+
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: '操作：',
+        choices: [
+          { name: '➕ 新增目录', value: 'add' },
+          ...(current.length > 1 ? [{ name: '🗑️ 移除目录', value: 'remove' }] : []),
+          { name: '✅ 完成', value: 'done' },
+        ],
+      },
+    ]);
+
+    if (action === 'done') break;
+
+    if (action === 'add') {
+      const { newDir } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'newDir',
+          message: '新仓库目录路径（绝对路径）：',
+          validate: (v: string) => v.trim() ? true : '路径不能为空',
+        },
+      ]);
+      if (newDir.trim()) {
+        const clean = newDir.trim().replace(/\\/g, '/');
+        if (!current.includes(clean)) current.push(clean);
+      }
+    }
+
+    if (action === 'remove') {
+      const { idx } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'idx',
+          message: '选择要移除的目录：',
+          choices: current.map((d, i) => ({ name: d, value: i })),
+        },
+      ]);
+      if (idx === 0) {
+        logInfo('不能移除默认目录（首项）。请先新增其他目录。');
+      } else {
+        current.splice(idx, 1);
+      }
+    }
+  }
+
+  if (current.length === 1 && current[0] === defaultDir) {
+    config.repoDirs = undefined;
+  } else {
+    config.repoDirs = current;
+  }
 }
