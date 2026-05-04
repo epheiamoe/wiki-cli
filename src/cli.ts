@@ -45,6 +45,7 @@ program
   .option('-c, --concurrency <n>', 'Number of concurrent page generations', '3')
   .option('-r, --retry <n>', 'Retry failed pages up to N times', '0')
   .option('-s, --silent', 'Silent mode: no interactive prompts, summary only')
+  .option('--browse', 'Auto-start browse server after generation')
   .action(async (options) => {
     try {
       await generateCommand({

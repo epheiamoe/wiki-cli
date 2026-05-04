@@ -35,6 +35,7 @@ export interface GenerateOptions {
   concurrency?: number;
   retry?: number;
   silent?: boolean;
+  browse?: boolean;
 }
 
 export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
@@ -153,6 +154,13 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   await generateIndex(finalDir, topics);
   logSuccess('Index file generated.');
+
+  if (opts.browse) {
+    logInfo('Starting browse server...');
+    const { browseCommand } = await import('./browse.js');
+    await browseCommand();
+    return;
+  }
 
   if (opts.silent) {
     console.log(`Result: ${topics.filter(t => !t.isGroup).length} pages, ${failed.length} failed`);
