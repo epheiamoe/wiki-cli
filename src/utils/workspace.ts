@@ -10,6 +10,7 @@ import { logInfo, logError } from './progress.js';
 export interface WorkDirResult {
   workDir: string;
   outputDir?: string;
+  updated?: boolean;
   cleanup?: () => Promise<void>;
 }
 
@@ -50,13 +51,14 @@ export async function resolveWorkDir(options: {
       await mkdir(REPOS_DIR, { recursive: true });
     }
 
-    await ensureRepo(url, targetDir, branch, depth);
+    const repoResult = await ensureRepo(url, targetDir, branch, depth);
     process.chdir(targetDir);
     logInfo(`Working directory: ${targetDir}`);
 
     if (temp) {
       return {
         workDir: targetDir,
+        updated: repoResult.updated,
         cleanup: async () => {
           const { rm } = await import('node:fs/promises');
           await rm(targetDir, { recursive: true, force: true });
@@ -64,7 +66,7 @@ export async function resolveWorkDir(options: {
       };
     }
 
-    return { workDir: targetDir };
+    return { workDir: targetDir, updated: repoResult.updated };
   }
 
   // No url: use -C dir or cwd

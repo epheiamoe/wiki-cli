@@ -70,9 +70,10 @@ program
   .command('browse')
   .description('Open generated Wiki in browser')
   .option('-p, --path <path>', 'Wiki directory or project path (default: .wiki in current directory)')
+  .option('-u, --url <url>', 'Git repository URL (look up cached wiki)')
   .action(async (options) => {
     try {
-      await browseCommand({ path: options.path });
+      await browseCommand({ path: options.path, url: options.url });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);

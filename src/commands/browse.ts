@@ -7,11 +7,13 @@ import { marked } from 'marked';
 import hljs from 'highlight.js';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
+import { defaultRepoDir } from '../utils/workspace.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 
 export interface BrowseOptions {
   path?: string;
+  url?: string;
 }
 
 export async function browseCommand(options?: BrowseOptions): Promise<void> {
@@ -28,6 +30,9 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
       const nested = join(wikiDir, '.wiki');
       if (existsSync(nested)) wikiDir = nested;
     }
+  } else if (options?.url) {
+    const repoDir = defaultRepoDir(options.url);
+    wikiDir = join(repoDir, '.wiki');
   } else {
     wikiDir = join(PROJECT_ROOT, '.wiki');
   }

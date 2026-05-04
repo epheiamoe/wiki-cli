@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import inquirer from 'inquirer';
 import { loadConfig } from '../config/config-store.js';
@@ -39,7 +39,7 @@ export interface GenerateOptions {
 }
 
 export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
-  const { cleanup, outputDir } = await resolveWorkDir({
+  const { cleanup, outputDir, updated } = await resolveWorkDir({
     dir: opts.dir,
     url: opts.url,
     output: opts.output,
@@ -48,13 +48,46 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     temp: opts.temp,
   });
 
+  const workDir = resolve(process.cwd());
+
+  // Repo not updated (network fallback) and wiki already exists → ask user
+  if (updated === false) {
+    const wikiDirForCheck = join(workDir, '.wiki');
+    if (existsSync(wikiDirForCheck)) {
+      const dirs = readdirSync(wikiDirForCheck, { withFileTypes: true })
+        .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
+        .map(e => e.name)
+        .sort()
+        .reverse();
+      if (dirs.length > 0) {
+        const existingPath = join(wikiDirForCheck, dirs[0]);
+        if (opts.silent) {
+          logWarning(`仓库未更新，使用已有 Wiki: ${existingPath}`);
+          return;
+        }
+        const { regen } = await inquirer.prompt([
+          { type: 'confirm', name: 'regen', message: '仓库没有更新，已有 Wiki 文档，是否重新生成？', default: false },
+        ]);
+        if (!regen) {
+          logInfo('跳过生成。');
+          const { open } = await inquirer.prompt([
+            { type: 'confirm', name: 'open', message: '打开已有 Wiki 文档？', default: true },
+          ]);
+          if (open) {
+            const { browseCommand } = await import('./browse.js');
+            await browseCommand({ path: existingPath });
+          }
+          return;
+        }
+      }
+    }
+  }
+
   const config = await loadConfig();
   if (!config) {
     logError('No configuration found. Run "wiki-cli config" first.');
     process.exit(1);
   }
-
-  const workDir = resolve(process.cwd());
 
   if (existsSync(TEMP_DIR)) {
     if (opts.silent) {
@@ -149,8 +182,9 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   const timestamp = getTimestamp();
   const finalDir = outputDir || join('.wiki', timestamp);
+  const absPath = resolve(finalDir);
   await moveDir(TEMP_DIR, finalDir);
-  logSuccess(`Wiki generated at ${finalDir}`);
+  logSuccess(`Wiki generated at ${absPath}`);
 
   await generateIndex(finalDir, topics);
   logSuccess('Index file generated.');
@@ -158,12 +192,23 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   if (opts.browse) {
     logInfo('Starting browse server...');
     const { browseCommand } = await import('./browse.js');
-    await browseCommand({ path: finalDir });
+    await browseCommand({ path: absPath });
     return;
   }
 
   if (opts.silent) {
     console.log(`Result: ${topics.filter(t => !t.isGroup).length} pages, ${failed.length} failed`);
+    if (cleanup) await cleanup();
+    return;
+  }
+
+  const { open } = await inquirer.prompt([
+    { type: 'confirm', name: 'open', message: `Wiki 已生成于 ${absPath}，打开浏览器查看？`, default: true },
+  ]);
+  if (open) {
+    const { browseCommand } = await import('./browse.js');
+    await browseCommand({ path: absPath });
+    return;
   }
 
   if (cleanup) await cleanup();

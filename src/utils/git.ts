@@ -11,21 +11,25 @@ export async function ensureRepo(url: string, targetDir: string, branch?: string
   const depthFlag = depth ? `--depth ${depth}` : '';
 
   if (existsSync(targetDir)) {
+    logInfo(`Updating existing repo at ${targetDir}...`);
     try {
-      logInfo(`Updating existing repo at ${targetDir}...`);
       execSync('git fetch --all', { cwd: targetDir, stdio: 'ignore' });
-      if (branch) {
-        execSync(`git checkout ${branch}`, { cwd: targetDir, stdio: 'ignore' });
-        execSync(`git merge origin/${branch}`, { cwd: targetDir, stdio: 'ignore' });
-      } else {
-        execSync('git merge', { cwd: targetDir, stdio: 'ignore' });
-      }
-      logInfo(`Repo updated at ${targetDir}`);
-      return { updated: true };
-    } catch (err: any) {
+    } catch {
       logWarning(`Network unavailable, using cached repo at ${targetDir}`);
       return { updated: false };
     }
+    try {
+      if (branch) {
+        execSync(`git checkout ${branch}`, { cwd: targetDir, stdio: 'pipe' });
+        execSync(`git merge origin/${branch}`, { cwd: targetDir, stdio: 'pipe' });
+      } else {
+        execSync('git merge', { cwd: targetDir, stdio: 'pipe' });
+      }
+    } catch (err: any) {
+      throw new Error(`Failed to update repo at ${targetDir}: ${err.message}`);
+    }
+    logInfo(`Repo updated at ${targetDir}`);
+    return { updated: true };
   }
 
   logInfo(`Cloning ${url}...`);
