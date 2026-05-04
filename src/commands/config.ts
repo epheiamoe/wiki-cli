@@ -275,6 +275,7 @@ async function configureRepoDirs(config: WikiCliConfig): Promise<void> {
         message: '操作：',
         choices: [
           { name: '➕ 新增目录', value: 'add' },
+          ...(current.length > 1 ? [{ name: '🔼 设为默认', value: 'setDefault' }] : []),
           ...(current.length > 1 ? [{ name: '🗑️ 移除目录', value: 'remove' }] : []),
           { name: '✅ 完成', value: 'done' },
         ],
@@ -296,6 +297,19 @@ async function configureRepoDirs(config: WikiCliConfig): Promise<void> {
         const clean = newDir.trim().replace(/\\/g, '/');
         if (!current.includes(clean)) current.push(clean);
       }
+    }
+
+    if (action === 'setDefault') {
+      const { idx } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'idx',
+          message: '选择要设为默认的目录：',
+          choices: current.slice(1).map((d, i) => ({ name: d, value: i + 1 })),
+        },
+      ]);
+      const [item] = current.splice(idx, 1);
+      current.unshift(item);
     }
 
     if (action === 'remove') {
