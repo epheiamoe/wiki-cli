@@ -126,7 +126,8 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     logError('Failed to generate outline. No topics found.');
     process.exit(1);
   }
-  logSuccess(`Generated ${topics.length} topics.`);
+  const pageCount = topics.filter(t => !t.isGroup).length;
+  logSuccess(`Generated ${topics.length} topics (${pageCount} pages).`);
 
   let parallel: boolean;
   let concurrency: number;
