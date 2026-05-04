@@ -8,7 +8,7 @@ import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
 import { renderPrompt } from '../ai/prompts.js';
 import { toolDefinitions, executeToolCall } from '../ai/tools.js';
 import {
-  createSession, loadSession, saveSession, listSessions, deleteSession,
+  createSession, loadSession, saveSession, listSessions, listAllSessions, deleteSession,
   printSession, showSessionsTable
 } from '../ai/ai-session.js';
 import type { Session } from '../ai/ai-session.js';
@@ -26,6 +26,7 @@ export interface AiOptions {
   temp?: boolean;
   session?: string;
   listSessions?: boolean;
+  listAllSessions?: boolean;
   deleteSession?: string;
   answerOnly?: boolean;
 }
@@ -46,9 +47,15 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  if (options.listSessions) {
-    const sessions = await listSessions();
-    console.log(chalk.bold('\n📋 保存的会话:'));
+  if (options.listSessions || options.listAllSessions) {
+    let sessions;
+    if (options.listAllSessions) {
+      sessions = await listAllSessions();
+      console.log(chalk.bold('\n📋 所有项目的会话:'));
+    } else {
+      sessions = await listSessions();
+      console.log(chalk.bold('\n📋 保存的会话:'));
+    }
     showSessionsTable(sessions);
     return;
   }

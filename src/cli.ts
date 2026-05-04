@@ -118,6 +118,7 @@ program
   .option('-t, --temp', 'Temporary mode: clean up clone after done (with --url)')
   .option('--session <id>', 'Resume a specific session')
   .option('--list-sessions', 'List all saved sessions')
+  .option('--all', 'With --list-sessions, show sessions from all projects')
   .option('--delete-session <id>', 'Delete a session')
   .option('-a, --answer-only', 'Output only the final answer (no streaming, no thinking)')
   .action(async (question, options) => {
@@ -133,6 +134,7 @@ program
         temp: options.temp,
         session: options.session,
         listSessions: options.listSessions,
+        listAllSessions: options.all,
         deleteSession: options.deleteSession,
         answerOnly: options.answerOnly,
       });
