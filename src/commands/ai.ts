@@ -63,17 +63,18 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
   const client = new LLMClient(config);
   const workDir = resolve(process.cwd());
 
-  // Initialize tools with embedding config
-  const { initTools } = await import('../ai/tools.js');
+  // Initialize tools with embedding + web fetch config
+  const { initTools, getFilteredTools } = await import('../ai/tools.js');
+  const webConfig = !config.webFetchDisabled ? { baseUrl: config.webFetchBaseUrl || 'https://r.jina.ai', apiKey: config.webFetchApiKey } : { disabled: true, baseUrl: '', apiKey: '' };
   if (config.embeddingModel && config.embeddingBaseUrl && config.embeddingApiKey) {
     initTools({
       provider: config.embeddingProvider || '',
       model: config.embeddingModel,
       baseUrl: config.embeddingBaseUrl,
       apiKey: config.embeddingApiKey,
-    });
+    }, webConfig);
   } else {
-    initTools();
+    initTools(undefined, webConfig);
   }
 
   // Check for wiki
@@ -113,7 +114,7 @@ export async function aiCommand(options: AiOptions = {}): Promise<void> {
     skipTools.add('search_wiki');
     skipTools.add('semantic_search');
   }
-  const allToolDefs = toolDefinitions.filter(t => !skipTools.has(t.function.name));
+  const allToolDefs = getFilteredTools().filter(t => !skipTools.has(t.function.name));
 
   // Build system prompt
   const aiSysVars = {

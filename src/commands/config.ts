@@ -37,6 +37,7 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
         choices: [
           { name: 'LLM (provider / model / API key)', value: 'llm' },
           { name: 'Embedding (semantic search model)', value: 'embedding' },
+          { name: 'Web Fetch (let AI read documentation URLs)', value: 'webFetch' },
           { name: 'Both', value: 'both' },
           { name: 'Done, quit', value: 'quit' },
         ],
@@ -52,6 +53,10 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
 
   if (mode === 'embedding' || mode === 'both') {
     await configureEmbedding(fullConfig);
+  }
+
+  if (mode === 'webFetch') {
+    await configureWebFetch(fullConfig);
   }
 
   if (mode === 'both' && !existing) {
@@ -194,4 +199,56 @@ async function configureEmbedding(config: WikiCliConfig): Promise<void> {
     },
   ]);
   config.embeddingApiKey = eak || config.apiKey;
+}
+
+async function configureWebFetch(config: WikiCliConfig): Promise<void> {
+  const { enable } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'enable',
+      message: 'Enable Web Fetch? (lets AI read documentation URLs via Jina Reader)',
+      default: !config.webFetchDisabled,
+    },
+  ]);
+
+  if (!enable) {
+    config.webFetchDisabled = true;
+    config.webFetchProvider = undefined;
+    config.webFetchBaseUrl = undefined;
+    config.webFetchApiKey = undefined;
+    return;
+  }
+
+  config.webFetchDisabled = false;
+
+  const { provider } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'provider',
+      message: 'Web Fetch provider (default: jina):',
+      default: config.webFetchProvider || 'jina',
+    },
+  ]);
+  config.webFetchProvider = provider || 'jina';
+
+  const { baseUrl } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'baseUrl',
+      message: 'Base URL (default: https://r.jina.ai):',
+      default: config.webFetchBaseUrl || 'https://r.jina.ai',
+    },
+  ]);
+  config.webFetchBaseUrl = baseUrl || 'https://r.jina.ai';
+
+  const { key } = await inquirer.prompt([
+    {
+      type: 'password',
+      name: 'key',
+      message: 'API Key (optional, for higher rate limits. Leave empty for free tier):',
+      mask: '*',
+      default: config.webFetchApiKey || '',
+    },
+  ]);
+  config.webFetchApiKey = key || undefined;
 }

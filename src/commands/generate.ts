@@ -5,7 +5,7 @@ import { loadConfig } from '../config/config-store.js';
 import { LLMClient, stripCodeFence } from '../ai/llm-client.js';
 import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
 import { renderPrompt } from '../ai/prompts.js';
-import { toolDefinitions, executeToolCall } from '../ai/tools.js';
+import { toolDefinitions, executeToolCall, initTools, getFilteredTools } from '../ai/tools.js';
 import type { WikiCliConfig } from '../config/config-store.js';
 import { ensureDir, writeTextFile, moveDir, getTimestamp, toSlug, removeDir } from '../utils/file.js';
 import { resolveWorkDir } from '../utils/workspace.js';
@@ -113,6 +113,10 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   }
 
   const client = new LLMClient(config);
+
+  // Initialize tools with web fetch config
+  const webConfig = !config.webFetchDisabled ? { baseUrl: config.webFetchBaseUrl || 'https://r.jina.ai', apiKey: config.webFetchApiKey } : { disabled: true, baseUrl: '', apiKey: '' };
+  initTools(undefined, webConfig);
 
   logInfo('Phase 1: Analyzing repository and generating outline...');
   const topics = await generateOutline(client, config, workDir);
@@ -344,7 +348,7 @@ async function collectFullResponse(
     const toolCallsMap = new Map<string, ToolCall>();
 
     if (stream) {
-      const streamIter = client.chatStream(messages, toolDefinitions, jsonMode);
+      const streamIter = client.chatStream(messages, getFilteredTools(), jsonMode);
 
       try {
         for await (const chunk of streamIter) {
@@ -384,7 +388,7 @@ async function collectFullResponse(
       }
     } else {
       try {
-        const response = await client.chat(messages, toolDefinitions, jsonMode);
+        const response = await client.chat(messages, getFilteredTools(), jsonMode);
 
         currentContent = response.content || '';
         currentReasoning = response.reasoning_content || '';

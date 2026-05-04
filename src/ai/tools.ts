@@ -189,6 +189,20 @@ export const toolDefinitions: ToolDefinition[] = [
         required: ['query']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'fetch_web_markdown',
+      description: 'Fetch a URL and convert it to clean Markdown. Use this when you see a documentation URL, README link, or API reference that would help answer the user\'s question. WARNING: this tool consumes API quota and the returned content counts toward context limits — only fetch URLs that are essential. Do NOT fetch the same URL multiple times in a conversation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The URL to fetch (http/https only)' }
+        },
+        required: ['url']
+      }
+    }
   }
 ];
 
@@ -454,9 +468,18 @@ async function readWiki(slug: string): Promise<ToolResult> {
 
 // Embedding config for semantic search (set at runtime)
 let embeddingConfig: { provider: string; model: string; baseUrl: string; apiKey: string } | null = null;
+let webFetchConfig: { disabled?: boolean; baseUrl: string; apiKey?: string } | null = null;
 
-export function initTools(embConfig?: { provider: string; model: string; baseUrl: string; apiKey: string }): void {
+export function initTools(embConfig?: { provider: string; model: string; baseUrl: string; apiKey: string }, webConfig?: { disabled?: boolean; baseUrl: string; apiKey?: string }): void {
   embeddingConfig = embConfig || null;
+  webFetchConfig = webConfig || null;
+}
+
+export function getFilteredTools(): ToolDefinition[] {
+  if (webFetchConfig?.disabled) {
+    return toolDefinitions.filter(t => t.function.name !== 'fetch_web_markdown');
+  }
+  return toolDefinitions;
 }
 
 async function searchWiki(query: string, maxResults?: number): Promise<ToolResult> {
@@ -559,6 +582,72 @@ async function semanticSearch(query: string, maxResults?: number): Promise<ToolR
   }
 }
 
+async function fetchWebMarkdown(url: string): Promise<ToolResult> {
+  if (!url || typeof url !== 'string') {
+    return { type: 'error', data: 'url is required' };
+  }
+  if (!/^https?:\/\/.+/.test(url)) {
+    return { type: 'error', data: 'Only http/https URLs are allowed' };
+  }
+
+  const baseUrl = webFetchConfig?.baseUrl || 'https://r.jina.ai';
+  const targetUrl = `${baseUrl.replace(/\/+$/, '')}/${url}`;
+  const apiKey = webFetchConfig?.apiKey;
+
+  const maxRetries = 3;
+  let lastError = '';
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      const headers: Record<string, string> = {
+        'Accept': 'text/markdown',
+        'User-Agent': 'wiki-cli/1.0',
+      };
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+      const res = await fetch(targetUrl, { signal: controller.signal, headers });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const text = await res.text();
+        return { type: 'success', data: text };
+      }
+
+      if (res.status === 429) {
+        lastError = `Rate limited (429). ${res.statusText}`;
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt + 1) * 1000));
+        }
+        continue;
+      }
+
+      if (res.status >= 500) {
+        lastError = `Server error (${res.status}). ${res.statusText}`;
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+        }
+        continue;
+      }
+
+      return { type: 'error', data: `HTTP ${res.status}: ${res.statusText}` };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        lastError = 'Request timed out after 15s';
+      } else {
+        lastError = err.message;
+      }
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+      }
+    }
+  }
+
+  return { type: 'error', data: `Failed after ${maxRetries + 1} attempts: ${lastError}` };
+}
+
 const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   list_directory: (args) => listDirectory(args.dir_path, args.max_depth),
   list_files: (args) => listFiles(args.path, args.extensions),
@@ -572,6 +661,7 @@ const toolHandlers: Record<string, (args: any) => Promise<ToolResult>> = {
   read_wiki: (args) => readWiki(args.slug),
   search_wiki: (args) => searchWiki(args.query, args.max_results),
   semantic_search: (args) => semanticSearch(args.query, args.max_results),
+  fetch_web_markdown: (args) => fetchWebMarkdown(args.url),
 };
 
 export async function executeToolCall(name: string, args: any): Promise<ToolResult> {

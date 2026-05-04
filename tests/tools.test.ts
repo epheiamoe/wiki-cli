@@ -15,8 +15,8 @@ describe('toolDefinitions', () => {
     expect(Array.isArray(toolDefinitions)).toBe(true);
   });
 
-  it('should have all 12 tools', () => {
-    expect(toolDefinitions.length).toBe(12);
+  it('should have all 13 tools', () => {
+    expect(toolDefinitions.length).toBe(13);
   });
 
   it('should include list_directory', () => {
@@ -33,6 +33,7 @@ describe('toolDefinitions', () => {
     expect(names).toContain('read_wiki');
     expect(names).toContain('search_wiki');
     expect(names).toContain('semantic_search');
+    expect(names).toContain('fetch_web_markdown');
   });
 
   it('each tool should have valid schema with type "object"', () => {

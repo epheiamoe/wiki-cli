@@ -15,6 +15,10 @@ export interface WikiCliConfig {
   embeddingModel?: string;
   embeddingBaseUrl?: string;
   embeddingApiKey?: string;
+  webFetchDisabled?: boolean;
+  webFetchProvider?: string;
+  webFetchBaseUrl?: string;
+  webFetchApiKey?: string;
 }
 
 export interface ModelEntry {
