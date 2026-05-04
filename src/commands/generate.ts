@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import inquirer from 'inquirer';
@@ -192,6 +194,19 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   await generateIndex(finalDir, topics);
   logSuccess('Index file generated.');
+
+  // Write metadata
+  const meta: Record<string, string> = { generatedAt: getTimestamp() };
+  try {
+    meta.gitCommit = execSync('git rev-parse HEAD', { encoding: 'utf-8', cwd: workDir }).trim();
+  } catch { /* not a git repo */ }
+  try {
+    meta.gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: workDir }).trim();
+  } catch { /* not a git repo */ }
+  try {
+    meta.gitRemote = execSync('git remote get-url origin', { encoding: 'utf-8', cwd: workDir }).trim();
+  } catch { /* no remote */ }
+  await writeFile(join(finalDir, '.meta.json'), JSON.stringify(meta, null, 2));
 
   if (opts.browse) {
     logInfo('Starting browse server...');

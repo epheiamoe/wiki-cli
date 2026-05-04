@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { configCommand } from './commands/config.js';
 import { generateCommand } from './commands/generate.js';
 import { browseCommand } from './commands/browse.js';
+import { statusCommand } from './commands/status.js';
 import { aiCommand } from './commands/ai.js';
 import { toolCallCommand } from './commands/tool-call.js';
 import { logError } from './utils/progress.js';
@@ -75,6 +76,29 @@ program
   .action(async (options) => {
     try {
       await browseCommand({ path: options.path, url: options.url });
+    } catch (err: any) {
+      logError(err.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('status')
+  .description('Show Wiki version status and compare with current git state')
+  .option('-v, --version <ts>', 'Wiki version timestamp (default: latest)')
+  .option('-C, --dir <path>', 'Project directory (default: current directory)')
+  .option('-u, --url <url>', 'Git repository URL (look up cached wiki)')
+  .option('--log', 'Show git log since wiki was generated')
+  .option('--stat', 'Show git log with file stats since wiki was generated')
+  .action(async (options) => {
+    try {
+      await statusCommand({
+        version: options.version,
+        dir: options.dir,
+        url: options.url,
+        log: options.log,
+        stat: options.stat,
+      });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);
