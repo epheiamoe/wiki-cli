@@ -7,7 +7,13 @@ import { marked } from 'marked';
 import hljs from 'highlight.js';
 import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
+import { LLMClient } from '../ai/llm-client.js';
+import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
 import { defaultRepoDir } from '../utils/workspace.js';
+import { loadConfig } from '../config/config-store.js';
+import { initTools, getFilteredTools, executeToolCall } from '../ai/tools.js';
+import { createSession, loadSession, saveSession } from '../ai/ai-session.js';
+import { renderPrompt } from '../ai/prompts.js';
 
 export interface BrowseOptions {
   path?: string;
@@ -57,6 +63,43 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
   logInfo(`Browsing Wiki: ${latest}`);
   const allVersions = timestamps;
 
+  // Chat: load config for AI panel
+  const config = await loadConfig();
+  let chatClient: LLMClient | null = null;
+  let chatTools: ReturnType<typeof getFilteredTools> = [];
+  let chatSystemPrompt = '';
+
+  if (config) {
+    const webConfig = !config.webFetchDisabled
+      ? { baseUrl: config.webFetchBaseUrl || 'https://r.jina.ai', apiKey: config.webFetchApiKey }
+      : { disabled: true as const, baseUrl: '', apiKey: '' };
+
+    if (config.embeddingModel && config.embeddingBaseUrl && config.embeddingApiKey) {
+      initTools(
+        { provider: config.embeddingProvider || '', model: config.embeddingModel, baseUrl: config.embeddingBaseUrl, apiKey: config.embeddingApiKey },
+        webConfig,
+      );
+    } else {
+      initTools(undefined, webConfig);
+    }
+
+    chatClient = new LLMClient(config);
+    chatTools = getFilteredTools();
+    if (!(config.embeddingModel && config.embeddingBaseUrl && config.embeddingApiKey)) {
+      chatTools = chatTools.filter(t => t.function.name !== 'semantic_search');
+    }
+
+    const wikiInfo = `该项目有 Wiki 文档，位于 ${wikiDir}。共有 ${timestamps.length} 个版本。`;
+    chatSystemPrompt = await renderPrompt('ai-system.md', {
+      workDir: projectRoot,
+      os: `${process.platform} ${process.arch}`,
+      wikiInfo,
+      wikiTools: `### Wiki 工具
+- list_wiki_pages：列出所有 Wiki 页面
+- read_wiki：按 slug 读取 Wiki 页面`,
+    });
+  }
+
   const port = await findFreePort(3000);
 
   const mimeTypes: Record<string, string> = {
@@ -88,7 +131,7 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
       if (pathname === '/') {
         const sidebarItems = await loadSidebar(wikiPath);
         const firstPage = sidebarItems.length > 0 ? join(wikiPath, `${sidebarItems[0].slug}.md`) : null;
-        await serveHtml(res, wikiPath, sidebarItems, firstPage, allVersions, version);
+        await serveHtml(res, wikiPath, sidebarItems, firstPage, allVersions, version, !!chatClient);
         return;
       }
 
@@ -99,6 +142,127 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
         }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(list));
+        return;
+      }
+
+      // Chat SSE endpoint
+      if (pathname === '/api/chat/' && req.method === 'GET') {
+        const sessionId = url.searchParams.get('session');
+        if (sessionId) {
+          const { loadSession } = await import('../ai/ai-session.js');
+          const session = await loadSession(sessionId);
+          if (session) {
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(session));
+          } else {
+            res.writeHead(404);
+            res.end('Session not found');
+          }
+        } else {
+          res.writeHead(400);
+          res.end('Missing session parameter');
+        }
+        return;
+      }
+
+      if (pathname === '/api/chat/' && req.method === 'POST' && chatClient) {
+        let body = '';
+        req.on('data', (chunk: string) => body += chunk);
+        req.on('end', async () => {
+          try {
+            const { message, sessionId } = JSON.parse(body);
+            if (!message) { res.writeHead(400); res.end('Missing message'); return; }
+
+            let session = sessionId ? await loadSession(sessionId) : null;
+            if (!session) session = await createSession();
+
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+            const sse = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+            const allMessages: ChatMessage[] = [
+              { role: 'system', content: chatSystemPrompt },
+              ...(session.messages || []),
+              { role: 'user', content: message },
+            ];
+
+            const maxIterations = 30;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+              const streamIter = chatClient.chatStream(allMessages, chatTools, false);
+              let currentContent = '';
+              let currentReasoning = '';
+              let hasToolCalls = false;
+              const toolCallsMap = new Map<string, ToolCall>();
+
+              try {
+                for await (const chunk of streamIter) {
+                  if (chunk.type === 'reasoning' && chunk.reasoning_content) {
+                    currentReasoning += chunk.reasoning_content;
+                    sse({ type: 'reasoning', text: chunk.reasoning_content });
+                  } else if (chunk.type === 'content') {
+                    currentContent += chunk.content ?? '';
+                    sse({ type: 'content', text: chunk.content ?? '' });
+                  } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+                    hasToolCalls = true;
+                    const tc = chunk.tool_call;
+                    const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
+                    const existing = toolCallsMap.get(key);
+                    if (existing) {
+                      existing.function.arguments += tc.function.arguments;
+                    } else {
+                      toolCallsMap.set(key, { ...tc });
+                    }
+                  } else if (chunk.type === 'error') {
+                    sse({ type: 'error', text: chunk.error || 'Unknown error' });
+                    res.end();
+                    return;
+                  }
+                }
+              } catch (err: any) {
+                sse({ type: 'error', text: err.message });
+                res.end();
+                return;
+              }
+
+              if (!hasToolCalls) {
+                allMessages.push({ role: 'assistant', content: currentContent || null, reasoning_content: currentReasoning || null });
+                break;
+              }
+
+              const calls = [...toolCallsMap.values()];
+              allMessages.push({
+                role: 'assistant',
+                content: currentContent || null,
+                reasoning_content: currentReasoning || null,
+                tool_calls: calls.map(tc => ({ id: tc.id, type: 'function' as const, function: tc.function })),
+              });
+
+              for (const tc of calls) {
+                sse({ type: 'tool_call', name: tc.function.name, args: tc.function.arguments });
+                let args: any;
+                try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+                const result = await executeToolCall(tc.function.name, args);
+                const summary = typeof result.data === 'string' ? result.data.slice(0, 120) : JSON.stringify(result.data).slice(0, 120);
+                sse({ type: 'tool_result', name: tc.function.name, summary });
+                allMessages.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) });
+              }
+            }
+
+            session.messages = allMessages.slice(1);
+            session.summary = message.slice(0, 60);
+            await saveSession(session);
+
+            sse({ type: 'done', sessionId: session.id });
+          } catch (err: any) {
+            if (!res.headersSent) { res.writeHead(500); res.end(err.message); return; }
+            res.write(`data: ${JSON.stringify({ type: 'error', text: err.message })}\n\n`);
+          }
+          res.end();
+        });
         return;
       }
 
@@ -392,7 +556,8 @@ async function serveHtml(
   sidebarItems: SidebarItem[],
   firstPage: string | null,
   allVersions: string[],
-  currentVersion: string
+  currentVersion: string,
+  chatEnabled: boolean
 ): Promise<void> {
   let firstContent = '';
   if (firstPage && existsSync(firstPage)) {
@@ -452,6 +617,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .overlay-box a.current { color: #58a6ff; background: #1c2333; font-weight: 600; }
 .overlay-box .close-btn { float: right; color: #8b949e; cursor: pointer; font-size: 18px; padding: 0 4px; }
 .overlay-box .close-btn:hover { color: #f0f6fc; }
+.chat-panel { width: 380px; flex-shrink: 0; display: none; flex-direction: column; border-left: 1px solid #30363d; background: #161b22; }
+.chat-panel.open { display: flex; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #30363d; }
+.chat-header span { font-size: 14px; font-weight: 600; color: #f0f6fc; }
+.chat-header button { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; }
+.chat-header button:hover { color: #f0f6fc; background: #1c2333; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.chat-msg { padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; max-width: 100%; word-break: break-word; }
+.chat-msg.user { background: #1c2333; align-self: flex-end; color: #f0f6fc; }
+.chat-msg.assistant { background: #0d1117; border: 1px solid #30363d; align-self: flex-start; color: #c9d1d9; }
+.chat-msg.reasoning { font-style: italic; color: #8b949e; font-size: 12px; align-self: flex-start; }
+.chat-msg.tool { font-size: 12px; color: #58a6ff; align-self: flex-start; font-family: 'JetBrains Mono', monospace; }
+.chat-msg.tool-result { font-size: 11px; color: #8b949e; align-self: flex-start; }
+.chat-msg.error { color: #f85149; align-self: flex-start; }
+.chat-msg code { background: #1c2333; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.chat-msg pre { background: #0d1117; padding: 8px; border-radius: 4px; overflow-x: auto; margin: 4px 0; font-size: 12px; }
+.chat-input-area { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #30363d; }
+.chat-input-area input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; color: #f0f6fc; font-size: 13px; outline: none; }
+.chat-input-area input:focus { border-color: #58a6ff; }
+.chat-input-area input:disabled { opacity: 0.5; }
+.chat-input-area button { background: #238636; border: none; color: #fff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.chat-input-area button:hover { background: #2ea043; }
+.chat-input-area button:disabled { opacity: 0.5; cursor: default; }
+.chat-input-area button:disabled:hover { background: #238636; }
+.content.chat-open { max-width: none; }
 </style>
 </head>
 <body>
@@ -463,7 +653,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   </div>
   <ul>${sidebarHtml}</ul>
 </div>
-<div class="content" id="content">${firstContent}</div>
+<div class="content ${chatEnabled ? '' : 'chat-open'}" id="content">${firstContent}</div>
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <span>💬 AI</span>
+    <button onclick="toggleChat()" title="关闭 AI 面板">✕</button>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  ${chatEnabled ? `
+  <div class="chat-input-area">
+    <input id="chatInput" placeholder="Ask about the codebase..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"/>
+    <button id="chatSend" onclick="sendChat()">Send</button>
+  </div>` : `
+  <div class="chat-input-area" style="justify-content:center;color:#8b949e;font-size:13px">
+    请先运行 <code>wiki-cli config</code> 配置 LLM
+  </div>`}
+</div>
 </div>
 <div class="overlay" id="versionOverlay" onclick="if(event.target===this)hideVersions()">
   <div class="overlay-box">
@@ -529,6 +734,112 @@ document.addEventListener('DOMContentLoaded', function() {
       window.open('/api/source/' + srcPath, '_blank');
     }
   });
+});
+
+// Chat
+let chatSessionId = localStorage.getItem('wikiChatSessionId') || '';
+let isStreaming = false;
+
+function toggleChat() {
+  const panel = document.getElementById('chatPanel');
+  const content = document.getElementById('content');
+  panel.classList.toggle('open');
+  content.classList.toggle('chat-open');
+  localStorage.setItem('wikiChatOpen', panel.classList.contains('open'));
+  if (panel.classList.contains('open')) {
+    document.getElementById('chatInput')?.focus();
+  }
+}
+
+async function sendChat() {
+  if (isStreaming) return;
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  isStreaming = true;
+  input.disabled = true;
+  document.getElementById('chatSend').disabled = true;
+
+  addChatMsg('user', msg);
+  const msgContainer = addChatMsg('assistant', '');
+
+  try {
+    const res = await fetch('/api/chat/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, sessionId: chatSessionId || undefined }),
+    });
+    if (!res.ok) { addChatMsg('error', await res.text()); isStreaming = false; input.disabled = false; document.getElementById('chatSend').disabled = false; return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'content') {
+            msgContainer.textContent += data.text;
+          } else if (data.type === 'reasoning') {
+            // append to a reasoning element or ignore in content display
+          } else if (data.type === 'tool_call') {
+            addChatMsg('tool', '🔧 ' + data.name + '(' + data.args.slice(0, 80) + (data.args.length > 80 ? '...' : '') + ')');
+          } else if (data.type === 'tool_result') {
+            addChatMsg('tool-result', '📦 ' + data.name + ': ' + data.summary.slice(0, 100));
+          } else if (data.type === 'error') {
+            addChatMsg('error', data.text);
+          } else if (data.type === 'done') {
+            chatSessionId = data.sessionId;
+            localStorage.setItem('wikiChatSessionId', chatSessionId);
+          }
+        } catch {}
+      }
+    }
+  } catch (err) {
+    addChatMsg('error', err.message);
+  }
+  isStreaming = false;
+  input.disabled = false;
+  document.getElementById('chatSend').disabled = false;
+  input.focus();
+}
+
+function addChatMsg(role, text) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  div.textContent = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+// Restore chat state
+document.addEventListener('DOMContentLoaded', function() {
+  const chatOpen = localStorage.getItem('wikiChatOpen') === 'true';
+  if (chatOpen) {
+    document.getElementById('chatPanel').classList.add('open');
+    document.getElementById('content').classList.add('chat-open');
+  }
+  // Restore session history
+  if (chatSessionId) {
+    fetch('/api/chat/?session=' + chatSessionId).then(r => r.json()).then(session => {
+      if (session && session.messages) {
+        for (const m of session.messages) {
+          if (m.role === 'user') addChatMsg('user', m.content || '');
+          else if (m.role === 'assistant') addChatMsg('assistant', m.content || '(tool calls)');
+        }
+      }
+    }).catch(() => {});
+  }
 });
 </script>
 </body>
