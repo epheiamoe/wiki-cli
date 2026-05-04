@@ -4,6 +4,7 @@ import { configCommand } from './commands/config.js';
 import { generateCommand } from './commands/generate.js';
 import { browseCommand } from './commands/browse.js';
 import { aiCommand } from './commands/ai.js';
+import { toolCallCommand } from './commands/tool-call.js';
 import { logError } from './utils/progress.js';
 
 const program = new Command();
@@ -111,6 +112,20 @@ program
         deleteSession: options.deleteSession,
         answerOnly: options.answerOnly,
       });
+    } catch (err: any) {
+      logError(err.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('tool-call')
+  .description('Execute a tool and output JSON result (for AI agents)')
+  .argument('<name>', 'Tool name')
+  .argument('[args]', 'JSON arguments string')
+  .action(async (name, args) => {
+    try {
+      await toolCallCommand(name, args);
     } catch (err: any) {
       logError(err.message);
       process.exit(1);

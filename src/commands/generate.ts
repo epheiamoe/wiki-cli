@@ -347,8 +347,10 @@ async function collectFullResponse(
     let contentStarted = false;
     const toolCallsMap = new Map<string, ToolCall>();
 
+    const genTools = getFilteredTools().filter(t => !['list_wiki_pages', 'read_wiki', 'search_wiki', 'semantic_search'].includes(t.function.name));
+
     if (stream) {
-      const streamIter = client.chatStream(messages, getFilteredTools(), jsonMode);
+      const streamIter = client.chatStream(messages, genTools, jsonMode);
 
       try {
         for await (const chunk of streamIter) {
@@ -388,7 +390,7 @@ async function collectFullResponse(
       }
     } else {
       try {
-        const response = await client.chat(messages, getFilteredTools(), jsonMode);
+        const response = await client.chat(messages, genTools, jsonMode);
 
         currentContent = response.content || '';
         currentReasoning = response.reasoning_content || '';

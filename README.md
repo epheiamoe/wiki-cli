@@ -6,6 +6,7 @@
 wiki-cli generate     # ✨ 生成
 wiki-cli browse       # 📖 浏览
 wiki-cli ai           # 💬 问答
+wiki-cli tool-call    # 🔧 工具调用（给 AI agent 用）
 ```
 
 ---
@@ -138,6 +139,40 @@ wiki-cli ai --session <id>
 问答中按 **Ctrl+C** 打断 AI 输出，不会退出会话。
 
 如果有 Embedding 配置，AI 会自动搜 Wiki 找相关页面来回答问题。
+
+### 5. Tool Call（给 AI agent 用）
+
+```bash
+# 列出可用工具
+wiki-cli tool-call --help
+
+# 调用工具，输出 JSON
+wiki-cli tool-call semantic_search '{"query": "authentication"}'
+wiki-cli tool-call read_wiki '{"slug": "project-architecture"}'
+wiki-cli tool-call fetch_web_markdown '{"url": "https://example.com/docs"}'
+```
+
+任何支持 shell 执行的 AI agent（包括 opencode）都可以通过这个接口使用 wiki-cli 的内置工具：
+
+| 工具 | 说明 |
+|------|------|
+| `semantic_search` | 语义搜索 Wiki（需配置 Embedding） |
+| `fetch_web_markdown` | 抓取 URL 并转为 Markdown（Jina Reader） |
+| `list_wiki_pages` | 列出所有 Wiki 页面 |
+| `read_wiki` | 按 slug 读取 Wiki 页面 |
+| `search_wiki` | 关键词搜索 Wiki |
+| `list_directory` | 列出目录结构 |
+| `list_files` | 按扩展名过滤文件 |
+| `read_file` | 读取文件内容 |
+| `search_in_files` | 全文搜索 |
+| `git_log` / `git_show` / `git_remote_info` | Git 操作 |
+| `dotenv_template` | 读取 `.env.example` |
+
+输出纯 JSON 到 stdout，方便管道和脚本处理：
+
+```json
+{"type":"success","data":"...content..."}
+```
 
 ---
 
