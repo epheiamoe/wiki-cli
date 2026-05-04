@@ -39,7 +39,7 @@ export interface GenerateOptions {
 }
 
 export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
-  const { cleanup } = await resolveWorkDir({
+  const { cleanup, outputDir } = await resolveWorkDir({
     dir: opts.dir,
     url: opts.url,
     output: opts.output,
@@ -148,7 +148,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   }
 
   const timestamp = getTimestamp();
-  const finalDir = join('.wiki', timestamp);
+  const finalDir = outputDir || join('.wiki', timestamp);
   await moveDir(TEMP_DIR, finalDir);
   logSuccess(`Wiki generated at ${finalDir}`);
 
@@ -158,7 +158,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   if (opts.browse) {
     logInfo('Starting browse server...');
     const { browseCommand } = await import('./browse.js');
-    await browseCommand();
+    await browseCommand({ path: finalDir });
     return;
   }
 

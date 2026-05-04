@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { join, extname, resolve, sep, normalize } from 'node:path';
+import { join, extname, resolve, sep, normalize, basename } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { execSync } from 'node:child_process';
@@ -10,11 +10,31 @@ import { stripCodeFence } from '../ai/llm-client.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 
-export async function browseCommand(): Promise<void> {
-  const wikiDir = join(PROJECT_ROOT, '.wiki');
+export interface BrowseOptions {
+  path?: string;
+}
+
+export async function browseCommand(options?: BrowseOptions): Promise<void> {
+  let wikiDir: string;
+
+  if (options?.path) {
+    wikiDir = resolve(options.path);
+    // If it points to a version dir directly, use the parent .wiki
+    if (existsSync(wikiDir) && basename(dirname(wikiDir)) === '.wiki') {
+      wikiDir = dirname(wikiDir);
+    }
+    // If it points to a project dir, look for .wiki inside
+    if (existsSync(wikiDir) && basename(wikiDir) !== '.wiki') {
+      const nested = join(wikiDir, '.wiki');
+      if (existsSync(nested)) wikiDir = nested;
+    }
+  } else {
+    wikiDir = join(PROJECT_ROOT, '.wiki');
+  }
 
   if (!existsSync(wikiDir)) {
-    logError('No .wiki directory found. Run "wiki-cli generate" first.');
+    logError(`Wiki directory not found: ${wikiDir}`);
+    logError('Run "wiki-cli generate" first or specify correct path.');
     process.exit(1);
   }
 
@@ -114,7 +134,6 @@ export async function browseCommand(): Promise<void> {
         const langName = extToLang(ext);
         const fileName = pathname.slice(12);
 
-        // Server-side highlighting: split by line, highlight each, wrap in divs
         const rawLines = content.split('\n');
         const lineHtml = rawLines.map((raw, i) => {
           const num = i + 1;
@@ -221,6 +240,11 @@ document.addEventListener('DOMContentLoaded', function(){
       logInfo(`Please open ${url} in your browser.`);
     }
   });
+}
+
+function dirname(p: string): string {
+  const i = p.replace(/[\\/]+$/, '').lastIndexOf(sep);
+  return i === -1 ? p : p.slice(0, i);
 }
 
 interface SidebarItem {

@@ -37,8 +37,8 @@ program
   .description('Analyze repository and generate Wiki documentation')
   .option('-C, --dir <path>', 'Local repository directory (default: current directory)')
   .option('-u, --url <url>', 'Git repository URL to clone and generate')
-  .option('-o, --output <path>', 'Clone destination path (with --url)')
-  .option('-b, --branch <name>', 'Git branch (with --url)')
+  .option('-o, --output <path>', 'Output path for wiki (with --url: clone destination)')
+  .option('-b, --branch <name>', 'Git branch to checkout (local or with --url)')
   .option('-d, --depth <n>', 'Git clone depth (with --url)')
   .option('-t, --temp', 'Temporary mode: clean up clone after done (with --url)')
   .option('-p, --parallel', 'Generate pages in parallel')
@@ -69,9 +69,10 @@ program
 program
   .command('browse')
   .description('Open generated Wiki in browser')
-  .action(async () => {
+  .option('-p, --path <path>', 'Wiki directory or project path (default: .wiki in current directory)')
+  .action(async (options) => {
     try {
-      await browseCommand();
+      await browseCommand({ path: options.path });
     } catch (err: any) {
       logError(err.message);
       process.exit(1);

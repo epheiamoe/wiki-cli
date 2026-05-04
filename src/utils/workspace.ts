@@ -1,13 +1,15 @@
-import { resolve, join } from 'node:path';
+import { resolve, join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execSync } from 'node:child_process';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { ensureRepo } from './git.js';
-import { logInfo } from './progress.js';
+import { logInfo, logError } from './progress.js';
 
 export interface WorkDirResult {
   workDir: string;
+  outputDir?: string;
   cleanup?: () => Promise<void>;
 }
 
@@ -70,6 +72,25 @@ export async function resolveWorkDir(options: {
   if (!existsSync(workDir)) {
     throw new Error(`Directory not found: ${workDir}`);
   }
+
+  // Checkout branch in local repo
+  if (branch) {
+    try {
+      execSync(`git checkout ${branch}`, { cwd: workDir, stdio: 'pipe' });
+      logInfo(`Switched to branch: ${branch}`);
+    } catch {
+      logError(`Branch "${branch}" not found or not a git repository in ${workDir}`);
+      process.exit(1);
+    }
+  }
+
   process.chdir(workDir);
-  return { workDir };
+
+  // Resolve output directory for wiki
+  let outputDir: string | undefined;
+  if (output) {
+    outputDir = resolve(output);
+  }
+
+  return { workDir, outputDir };
 }
