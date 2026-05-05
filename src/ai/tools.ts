@@ -286,18 +286,22 @@ async function readFileTool(filePath: string, startLine?: number, endLine?: numb
     const content = await readFile(absPath, 'utf-8');
     const lines = content.split('\n');
 
-    let result: string;
     let actualStartLine = 1;
     let actualEndLine = lines.length;
+    let sliced: string[];
 
     if (startLine !== undefined) {
       actualStartLine = startLine;
       const e = endLine !== undefined ? endLine : lines.length;
       actualEndLine = e;
-      result = lines.slice(Math.max(0, startLine - 1), e).join('\n');
+      sliced = lines.slice(Math.max(0, startLine - 1), e);
     } else {
-      result = content;
+      sliced = lines;
     }
+
+    // Prefix each line with its line number
+    const prefixed = sliced.map((l, i) => `${actualStartLine + i}: ${l}`);
+    const result = prefixed.join('\n');
 
     if (result.length > MAX_FILE_CHARS) {
       const truncated = result.slice(0, MAX_FILE_CHARS);

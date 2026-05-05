@@ -67,7 +67,7 @@ describe('executeToolCall', () => {
   it('read_file with line range should work', async () => {
     const result = await executeToolCall('read_file', { file_path: join(testDir, 'test.txt'), start_line: 1, end_line: 1 });
     expect(result.type).toBe('success');
-    expect(result.data).toBe('hello world');
+    expect(result.data).toBe('1: hello world');
   });
 
   it('read_file should error on missing file', async () => {

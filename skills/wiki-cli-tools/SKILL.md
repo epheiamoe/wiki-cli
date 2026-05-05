@@ -42,7 +42,7 @@ The AI will:
 2. Then explore specific source files as needed
 3. Return a structured answer with source citations
 
-**Important**: This tool takes 10-45 seconds (LLM response + tool calls). It outputs
+**Important**: This tool takes 10-60 seconds (LLM response + tool calls). It outputs
 natural language, not JSON. Use it when you need a synthesized understanding, not
 just a raw data lookup. For simple lookups (single file read, keyword search, wiki
 page read), use `tool-call` instead — it's faster and returns structured JSON.
