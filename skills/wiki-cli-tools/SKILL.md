@@ -1,11 +1,8 @@
 ---
 name: wiki-cli-tools
 description: |
-  Use wiki-cli tools to access structured codebase documentation, semantic search,
-  and web fetching capabilities. Trigger when the user asks about codebase
-  understanding, documentation, wiki, or when you need to look up information
-  about a project's architecture, APIs, or design patterns. Also triggers when
-  you see the user referencing documentation URLs that would be useful to fetch.
+  使用 wiki-cli 工具访问结构化代码库文档、语义搜索和网页抓取功能。
+  仅当用户要求你使用 wiki-cli 时触发，因为可能项目并没有 wiki 文档。
 ---
 
 # Wiki CLI Tools
