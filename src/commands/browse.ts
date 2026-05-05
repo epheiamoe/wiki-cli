@@ -800,12 +800,61 @@ function toggleChat() {
 async function sendChat() {
   if (isStreaming) return;
   const input = document.getElementById('chatInput');
-  const msg = input.value.trim();
+  let msg = input.value.trim();
   if (!msg) return;
   input.value = '';
   isStreaming = true;
   input.disabled = true;
   document.getElementById('chatSend').disabled = true;
+
+  // Slash commands
+  if (msg.startsWith('/')) {
+    const parts = msg.slice(1).split(' ');
+    const cmd = parts[0].toLowerCase();
+    if (cmd === 'help') {
+      addChatMsg('user', msg);
+      addChatMsg('assistant', '**命令列表:**\\n- **/help** — 显示帮助\\n- **/new** — 新对话\\n- **/undo** — 撤回上一条\\n- **/session** — 查看 session ID');
+      isStreaming = false;
+      input.disabled = false;
+      document.getElementById('chatSend').disabled = false;
+      return;
+    }
+    if (cmd === 'new') {
+      chatSessionId = '';
+      localStorage.removeItem('wikiChatSessionId');
+      document.getElementById('chatMessages').innerHTML = '';
+      addChatMsg('user', msg);
+      addChatMsg('assistant', '已创建新对话。');
+      isStreaming = false;
+      input.disabled = false;
+      document.getElementById('chatSend').disabled = false;
+      return;
+    }
+    if (cmd === 'undo') {
+      const container = document.getElementById('chatMessages');
+      // Remove last two elements (user msg + assistant block)
+      let removed = 0;
+      while (container.lastChild && removed < 2) {
+        container.removeChild(container.lastChild);
+        removed++;
+      }
+      // Also revert sessionId change if it was set
+      addChatMsg('assistant', '已撤回上一条消息。');
+      isStreaming = false;
+      input.disabled = false;
+      document.getElementById('chatSend').disabled = false;
+      return;
+    }
+    if (cmd === 'session') {
+      addChatMsg('user', msg);
+      addChatMsg('assistant', '当前 session ID: **' + (chatSessionId || '无') + '**');
+      isStreaming = false;
+      input.disabled = false;
+      document.getElementById('chatSend').disabled = false;
+      return;
+    }
+    // Unknown command — pass through to LLM
+  }
 
   addChatMsg('user', msg);
   // Assistant message container — reasoning then content
@@ -931,9 +980,38 @@ document.addEventListener('DOMContentLoaded', function() {
   if (chatSessionId) {
     fetch('/api/chat/?session=' + chatSessionId).then(r => r.json()).then(session => {
       if (session && session.messages) {
+        const container = document.getElementById('chatMessages');
         for (const m of session.messages) {
-          if (m.role === 'user') addChatMsg('user', m.content || '');
-          else if (m.role === 'assistant') addChatMsg('assistant', m.content || '(tool calls)');
+          if (m.role === 'user') {
+            addChatMsg('user', m.content || '');
+          } else if (m.role === 'assistant' && m.content === null && m.reasoning_content === null && (!m.tool_calls || m.tool_calls.length === 0)) {
+            // skip empty assistant messages
+          } else if (m.role === 'assistant') {
+            const block = document.createElement('div');
+            block.className = 'chat-msg assistant-block';
+            if (m.reasoning_content) {
+              const rEl = document.createElement('div');
+              rEl.className = 'chat-msg reasoning';
+              rEl.textContent = m.reasoning_content;
+              block.appendChild(rEl);
+            }
+            if (m.tool_calls && m.tool_calls.length > 0) {
+              for (const tc of m.tool_calls) {
+                const tcEl = document.createElement('div');
+                tcEl.className = 'chat-msg tool';
+                const args = tc.function.arguments || '';
+                tcEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg> ' + escapeHtml(tc.function.name) + '(' + escapeHtml(args.slice(0, 80)) + (args.length > 80 ? '...' : '') + ')';
+                block.appendChild(tcEl);
+              }
+            }
+            if (m.content) {
+              const cEl = document.createElement('div');
+              cEl.className = 'chat-msg assistant';
+              cEl.innerHTML = marked.parse(m.content);
+              block.appendChild(cEl);
+            }
+            container.appendChild(block);
+          }
         }
       }
     }).catch(() => {});
