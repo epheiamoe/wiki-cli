@@ -397,6 +397,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const staticMap: Record<string, string> = {
           'github-dark.min.css': join(pathDirname(require.resolve('highlight.js/package.json')), 'styles', 'github-dark.min.css'),
           'mermaid.min.js': join(pathDirname(require.resolve('mermaid/package.json')), 'dist', 'mermaid.min.js'),
+          'marked.umd.js': join(pathDirname(require.resolve('marked/package.json')), 'lib', 'marked.umd.js'),
         };
         const assetPath = staticMap[name];
         if (assetPath && existsSync(assetPath)) {
@@ -666,9 +667,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .chat-msg.reasoning { font-style: italic; color: #8b949e; font-size: 12px; align-self: flex-start; }
 .chat-msg.tool { font-size: 12px; color: #58a6ff; align-self: flex-start; font-family: 'JetBrains Mono', monospace; }
 .chat-msg.tool-result { font-size: 11px; color: #8b949e; align-self: flex-start; }
+.chat-msg.assistant-block { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
 .chat-msg.error { color: #f85149; align-self: flex-start; }
-.chat-msg code { background: #1c2333; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
 .chat-msg pre { background: #0d1117; padding: 8px; border-radius: 4px; overflow-x: auto; margin: 4px 0; font-size: 12px; }
+.chat-msg pre code { background: none; padding: 0; }
+.chat-msg code { background: #1c2333; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.chat-msg p { margin: 0 0 4px 0; }
+.chat-msg p:last-child { margin-bottom: 0; }
+.chat-msg ul, .chat-msg ol { margin: 4px 0; padding-left: 16px; }
+.chat-msg strong { font-weight: 600; }
+.chat-msg a { color: #58a6ff; }
 .chat-input-area { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #30363d; }
 .chat-input-area input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; color: #f0f6fc; font-size: 13px; outline: none; }
 .chat-input-area input:focus { border-color: #58a6ff; }
@@ -684,10 +692,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="wrapper">
 <div class="sidebar">
   <div class="sidebar-header">
-    <h2>📖 Wiki</h2>
+    <h2><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 19.5"/><path d="M9 10h6"/><path d="M12 7v6"/></svg> Wiki</h2>
     <div style="display:flex;gap:4px">
-      <button class="version-btn" onclick="toggleChat()" title="AI 对话">💬</button>
-      <button class="version-btn" onclick="showVersions()">历史版本</button>
+      <button class="version-btn" onclick="toggleChat()" title="AI 对话"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></button>
+      <button class="version-btn" onclick="showVersions()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
     </div>
   </div>
   <ul>${sidebarHtml}</ul>
@@ -695,14 +703,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="content ${chatEnabled ? '' : 'chat-open'}" id="content">${firstContent}</div>
 <div class="chat-panel" id="chatPanel">
   <div class="chat-header">
-    <span>💬 AI</span>
-    <button onclick="toggleChat()" title="关闭 AI 面板">✕</button>
+    <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg> AI</span>
+    <button onclick="toggleChat()" title="关闭 AI 面板"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
   </div>
   <div class="chat-messages" id="chatMessages"></div>
   ${chatEnabled ? `
   <div class="chat-input-area">
     <input id="chatInput" placeholder="Ask about the codebase..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"/>
-    <button id="chatSend" onclick="sendChat()">Send</button>
+    <button id="chatSend" onclick="sendChat()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg></button>
   </div>` : `
   <div class="chat-input-area" style="justify-content:center;color:#8b949e;font-size:13px">
     请先运行 <code>wiki-cli config</code> 配置 LLM
@@ -716,6 +724,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     ${versionsHtml}
   </div>
 </div>
+<script src="/static/marked.umd.js"></script>
 <script>
 const currentVersion = ${JSON.stringify(currentVersion)};
 const wikiSlugs = ${JSON.stringify(slugs)};
@@ -799,7 +808,36 @@ async function sendChat() {
   document.getElementById('chatSend').disabled = true;
 
   addChatMsg('user', msg);
-  const msgContainer = addChatMsg('assistant', '');
+  // Assistant message container — reasoning then content
+  const assistantBlock = document.createElement('div');
+  assistantBlock.className = 'chat-msg assistant-block';
+  document.getElementById('chatMessages').appendChild(assistantBlock);
+
+  let reasoningEl = null;
+  let contentEl = null;
+  let currentContent = '';
+
+  function ensureReasoning() {
+    if (!reasoningEl) {
+      reasoningEl = document.createElement('div');
+      reasoningEl.className = 'chat-msg reasoning';
+      assistantBlock.appendChild(reasoningEl);
+    }
+    return reasoningEl;
+  }
+  function ensureContent() {
+    if (!contentEl) {
+      if (reasoningEl && currentContent === '' && !reasoningEl.textContent) {
+        // First content after reasoning — remove empty reasoning placeholder
+        assistantBlock.removeChild(reasoningEl);
+        reasoningEl = null;
+      }
+      contentEl = document.createElement('div');
+      contentEl.className = 'chat-msg assistant';
+      assistantBlock.appendChild(contentEl);
+    }
+    return contentEl;
+  }
 
   try {
     const res = await fetch('/api/chat/', {
@@ -823,14 +861,24 @@ async function sendChat() {
         if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'content') {
-            msgContainer.textContent += data.text;
-          } else if (data.type === 'reasoning') {
-            // append to a reasoning element or ignore in content display
+          if (data.type === 'reasoning') {
+            ensureReasoning().textContent += data.text;
+          } else if (data.type === 'content') {
+            currentContent += data.text;
+            const el = ensureContent();
+            el.innerHTML = marked.parse(currentContent);
           } else if (data.type === 'tool_call') {
-            addChatMsg('tool', '🔧 ' + data.name + '(' + data.args.slice(0, 80) + (data.args.length > 80 ? '...' : '') + ')');
+            // Close current reasoning/content, show tool call
+            const tcEl = document.createElement('div');
+            tcEl.className = 'chat-msg tool';
+            tcEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg> ' + escapeHtml(data.name) + '(' + escapeHtml(data.args.slice(0, 80)) + (data.args.length > 80 ? '...' : '') + ')';
+            assistantBlock.appendChild(tcEl);
           } else if (data.type === 'tool_result') {
-            addChatMsg('tool-result', '📦 ' + data.name + ': ' + data.summary.slice(0, 100));
+            const trEl = document.createElement('div');
+            trEl.className = 'chat-msg tool-result';
+            const summary = escapeHtml(data.summary.slice(0, 100));
+            trEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></svg> ' + escapeHtml(data.name) + ': ' + summary;
+            assistantBlock.appendChild(trEl);
           } else if (data.type === 'error') {
             addChatMsg('error', data.text);
           } else if (data.type === 'done') {
@@ -849,11 +897,21 @@ async function sendChat() {
   input.focus();
 }
 
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
 function addChatMsg(role, text) {
   const container = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = 'chat-msg ' + role;
-  div.textContent = text;
+  if (role === 'assistant' || role === 'user') {
+    div.innerHTML = marked.parse(text);
+  } else {
+    div.textContent = text;
+  }
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
   return div;
