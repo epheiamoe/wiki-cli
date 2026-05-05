@@ -11,8 +11,8 @@ description: |
 # Wiki CLI Tools
 
 This skill lets you use `wiki-cli` commands to read structured Wiki documentation,
-perform semantic search across a codebase, fetch web pages as clean Markdown, and
-manage Wiki versions.
+perform semantic search across a codebase, fetch web pages as clean Markdown,
+chat with a Wiki-aware AI about the codebase, and manage Wiki versions.
 
 ## Prerequisites
 
@@ -30,6 +30,25 @@ The source repository is at https://github.com/epheiamoe/wiki-cli.
 ## Available Tools
 
 All tools output JSON to stdout with format `{"type":"success"|"error","data":...}`.
+
+### Wiki-Aware AI Query
+
+For open-ended questions about architecture, design patterns, or API usage that
+require synthesis across multiple files, use the Wiki-aware AI:
+
+```bash
+wiki-cli ai -q "<your question about the codebase>" -a
+```
+
+The AI will:
+1. First read the Wiki to get the project overview
+2. Then explore specific source files as needed
+3. Return a structured answer with source citations
+
+**Important**: This tool takes 10-45 seconds (LLM response + tool calls). It outputs
+natural language, not JSON. Use it when you need a synthesized understanding, not
+just a raw data lookup. For simple lookups (single file read, keyword search, wiki
+page read), use `tool-call` instead — it's faster and returns structured JSON.
 
 ### Semantic Search
 

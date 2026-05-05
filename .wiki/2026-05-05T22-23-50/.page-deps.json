@@ -1,0 +1,762 @@
+{
+  "ai-问答": {
+    "src/commands/ai.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/ai-session.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/browse.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/config/config-store.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/config.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "README.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/cli.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\package.json": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/config/default-models.json": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "prompts/ai-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/status.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\workspace.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\config.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\cli.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\README.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/utils/progress.ts": [
+      [
+        1,
+        30
+      ]
+    ],
+    "src/commands/index.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/generate.ts": [
+      [
+        1,
+        120
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\file.ts": [
+      [
+        1,
+        100
+      ]
+    ],
+    "src/utils/workspace.ts": [
+      [
+        1,
+        40
+      ]
+    ],
+    "src/prompts.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\config\\config-store.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\browse.ts": [
+      [
+        1,
+        60
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\config\\default-models.json": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\progress.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/prompts.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/llm-client.ts": [
+      [
+        1,
+        120
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\outline-system.md": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "查看状态": {
+    "src/commands/status.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "工具调用": {
+    "src/utils/progress.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/utils/workspace.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/tool-call.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "命令行入口与命令注册": {
+    "package.json": [
+      [
+        1,
+        30
+      ]
+    ],
+    "src/cli.ts": [
+      [
+        145,
+        165
+      ],
+      [
+        80,
+        120
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\cli.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\README.md": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "llm-客户端-流式与非流式": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\llm-client.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "tool-系统-定义与执行": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        1,
+        30
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\status.ts": [
+      [
+        1,
+        15
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\tool-call.ts": [
+      [
+        1,
+        15
+      ]
+    ],
+    "src/ai/tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "tests/tools.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\tests\\llm-client.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\tools.ts": [
+      [
+        1,
+        30
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\cli.ts": [
+      [
+        1,
+        1
+      ]
+    ],
+    "src/ai/embeddings.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "两阶段生成引擎": {
+    "src/commands/ai.ts": [
+      [
+        70,
+        135
+      ]
+    ],
+    "src/commands/generate.ts": [
+      [
+        125,
+        135
+      ],
+      [
+        410,
+        430
+      ],
+      [
+        540,
+        560
+      ]
+    ],
+    "src/commands/tool-call.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\config\\config-store.ts": [
+      [
+        1,
+        15
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/browse.ts": [
+      [
+        80,
+        110
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\llm-client.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\tests\\outline-parser.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "增量更新-update-模式": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\progress.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\outline-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\page-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/ai.ts": [
+      [
+        1,
+        30
+      ]
+    ],
+    "src/ai/tools.ts": [
+      [
+        1,
+        20
+      ]
+    ]
+  },
+  "会话管理系统": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\ai-session.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        1,
+        30
+      ],
+      [
+        760,
+        1050
+      ],
+      [
+        350,
+        500
+      ],
+      [
+        640,
+        700
+      ],
+      [
+        115,
+        145
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\diff.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\ai.ts": [
+      [
+        1,
+        100
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\browse.ts": [
+      [
+        155,
+        275
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\update-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\update-user.md": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "语义搜索与-embedding": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\embeddings.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        130,
+        280
+      ],
+      [
+        690,
+        760
+      ],
+      [
+        1050,
+        1100
+      ]
+    ]
+  },
+  "ai-聊天面板-浏览器内对话": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\ai.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\browse.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\llm-client.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\ai-session.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "prompt-模板系统": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\config\\config-store.ts": [
+      [
+        35,
+        50
+      ],
+      [
+        55,
+        75
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\ai\\prompts.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "工作目录解析": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\outline-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\outline-user.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\page-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\page-user.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\update-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\update-user.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\prompts\\ai-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/utils/workspace.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/utils/git.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\tests\\prompts.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/utils/progress.ts": [
+      [
+        1,
+        30
+      ]
+    ]
+  },
+  "git-差异分析与依赖追踪": {
+    "src/commands/generate.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\generate.ts": [
+      [
+        280,
+        300
+      ],
+      [
+        355,
+        410
+      ],
+      [
+        740,
+        760
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\ai.ts": [
+      [
+        130,
+        150
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\commands\\browse.ts": [
+      [
+        100,
+        115
+      ]
+    ],
+    "src/utils/diff.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/config/config-store.ts": [
+      [
+        1,
+        30
+      ]
+    ]
+  },
+  "测试策略": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\file.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\src\\utils\\progress.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "自定义-llm-与-embedding": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/vitest.config.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/tools.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/llm-client.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/prompts.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/config-store.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/file.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/tests/outline-parser.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  },
+  "跨平台兼容与发布": {
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\tests\\utils\\file.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli\\tests\\utils\\progress.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/config/default-models.json": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/config/config-store.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/package.json": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "E:\\Epheia\\dev\\apps\\tool-apps\\wiki-cli/src/ai/tools.ts": [
+      [
+        1,
+        30
+      ]
+    ],
+    "src/commands/config.ts": [
+      [
+        1,
+        999999
+      ]
+    ]
+  }
+}

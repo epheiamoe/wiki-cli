@@ -35,6 +35,7 @@ export interface LLMResponse {
 }
 
 const MAX_RETRIES = 3;
+const FETCH_TIMEOUT = 90000;
 
 function serializeMessage(m: ChatMessage): Record<string, any> {
   const msg: Record<string, any> = { role: m.role };
@@ -104,11 +105,15 @@ export class LLMClient {
       }
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
         const response = await fetch(url, {
           method: 'POST',
           headers,
           body: bodyStr,
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -209,11 +214,15 @@ export class LLMClient {
       }
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
         const response = await fetch(url, {
           method: 'POST',
           headers,
           body: bodyStr,
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -232,7 +241,12 @@ export class LLMClient {
           tool_calls: choice?.tool_calls || [],
         };
       } catch (err: any) {
-        lastError = err.message;
+        // Distinguish timeout from other errors for better error messages
+        if (err.name === 'AbortError') {
+          lastError = `Request timed out after ${FETCH_TIMEOUT}ms`;
+        } else {
+          lastError = err.message;
+        }
         if (attempt < MAX_RETRIES) continue;
         throw err;
       }
