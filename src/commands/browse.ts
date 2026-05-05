@@ -868,7 +868,10 @@ async function sendChat() {
             const el = ensureContent();
             el.innerHTML = marked.parse(currentContent);
           } else if (data.type === 'tool_call') {
-            // Close current reasoning/content, show tool call
+            // Reset for next iteration — fresh reasoning/content elements
+            reasoningEl = null;
+            contentEl = null;
+            currentContent = '';
             const tcEl = document.createElement('div');
             tcEl.className = 'chat-msg tool';
             tcEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg> ' + escapeHtml(data.name) + '(' + escapeHtml(data.args.slice(0, 80)) + (data.args.length > 80 ? '...' : '') + ')';
