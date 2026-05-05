@@ -36,7 +36,7 @@ export function getChangedFiles(oldCommit: string, cwd: string): ChangedFile[] {
     { encoding: 'utf-8', cwd }
   ).trim();
   if (!raw) return [];
-  return parseGitDiff(raw);
+  return parseGitDiff(raw).filter(f => !f.path.startsWith('.wiki/') && f.path !== '.wiki');
 }
 
 export function getChangedRanges(oldCommit: string, filePath: string, cwd: string): [number, number][] {

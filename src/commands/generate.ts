@@ -415,7 +415,7 @@ async function updateAnalysis(
 
     try {
       const fullContent = await collectFullResponse(
-        client, messages, config, false, useJsonMode,
+        client, messages, config, true, useJsonMode,
         getFilteredTools()
       );
 
