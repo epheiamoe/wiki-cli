@@ -1,3 +1,5 @@
+{{updateInstruction}}
+
 为 Wiki 编写一个页面。
 
 <metadata>
@@ -8,6 +10,12 @@
 - 简短项目概述：{{projectSummary}}
 - 本页编写任务：{{pageTask}}
 </metadata>
+
+## 旧版本（如需更新，基于此修改）
+{{oldContent}}
+
+## 触发变更的代码（此页面需更新的原因）
+{{changeTrigger}}
 
 ## 本 Wiki 所有其他页面（交叉引用依据）
 {{availablePages}}

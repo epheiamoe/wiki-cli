@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
-import { existsSync, readdirSync } from 'node:fs';
+import { writeFile, readFile, readdir, copyFile, mkdir } from 'node:fs/promises';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import inquirer from 'inquirer';
 import { loadConfig } from '../config/config-store.js';
@@ -8,13 +8,21 @@ import { LLMClient, stripCodeFence } from '../ai/llm-client.js';
 import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
 import { renderPrompt } from '../ai/prompts.js';
 import { toolDefinitions, executeToolCall, initTools, getFilteredTools } from '../ai/tools.js';
+import type { ToolDefinition } from '../ai/tools.js';
 import type { WikiCliConfig } from '../config/config-store.js';
 import { ensureDir, writeTextFile, moveDir, getTimestamp, toSlug, removeDir } from '../utils/file.js';
 import { resolveWorkDir } from '../utils/workspace.js';
+import { getChangedFiles, getAffectedSlugs } from '../utils/diff.js';
+import type { PageDeps, ChangedFile } from '../utils/diff.js';
 import chalk from 'chalk';
 import { logInfo, logSuccess, logWarning, logError, logToolCall, logToolResult } from '../utils/progress.js';
 
 const TEMP_DIR = '.wiki/temp';
+
+// Page dependency tracking (written after generation)
+let _currentPageSlug: string | null = null;
+const _pageDeps: Record<string, Array<{ file: string; lines: [number, number] }>> = {};
+const _pageContent: Record<string, string> = {};
 
 interface Topic {
   title: string;
@@ -38,6 +46,7 @@ export interface GenerateOptions {
   retry?: number;
   silent?: boolean;
   browse?: boolean;
+  update?: boolean;
 }
 
 export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
@@ -120,15 +129,26 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   const webConfig = !config.webFetchDisabled ? { baseUrl: config.webFetchBaseUrl || 'https://r.jina.ai', apiKey: config.webFetchApiKey } : { disabled: true, baseUrl: '', apiKey: '' };
   initTools(undefined, webConfig, workDir);
 
-  logInfo('Phase 1: Analyzing repository and generating outline...');
-  const topics = await generateOutline(client, config, workDir);
-  if (topics.length === 0) {
-    logError('Failed to generate outline. No topics found.');
-    process.exit(1);
-  }
-  const pageCount = topics.filter(t => !t.isGroup).length;
-  logSuccess(`Generated ${topics.length} topics (${pageCount} pages).`);
+  let topics: Topic[];
+  let updatePlan: UpdatePlan | null = null;
 
+  if (opts.update) {
+    const result = await resolveAndRunUpdate(client, config, workDir, opts);
+    if (!result) return;
+    topics = result.topics;
+    updatePlan = result.updatePlan;
+  } else {
+    logInfo('Phase 1: Analyzing repository and generating outline...');
+    topics = await generateOutline(client, config, workDir);
+    if (topics.length === 0) {
+      logError('Failed to generate outline. No topics found.');
+      process.exit(1);
+    }
+    const pageCount = topics.filter(t => !t.isGroup).length;
+    logSuccess(`Generated ${topics.length} topics (${pageCount} pages).`);
+  }
+
+  // For --update mode, parallel/concurrency still works but some pages are skipped
   let parallel: boolean;
   let concurrency: number;
 
@@ -159,13 +179,39 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     concurrency = answers.concurrency || 3;
   }
 
+  // In update mode, old page content is already resolved; for full gen, use empty cache
+  const updateMode = !!updatePlan;
+  const oldContentCache: Record<string, string> = {};
+  let changedFilesInfo = '';
+  if (updateMode) {
+    try {
+      const wd = workDir;
+      const latestDir2 = join(wd, '.wiki', readdirSync(join(wd, '.wiki'), { withFileTypes: true })
+        .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
+        .map(e => e.name).sort().reverse()[0]);
+      const contentPath2 = join(latestDir2, '.page-content.json');
+      if (existsSync(contentPath2)) {
+        Object.assign(oldContentCache, JSON.parse(readFileSync(contentPath2, 'utf-8')));
+      }
+      const meta2 = JSON.parse(readFileSync(join(latestDir2, '.meta.json'), 'utf-8'));
+      if (meta2.gitCommit) {
+        changedFilesInfo = execSync(`git diff ${meta2.gitCommit}..HEAD --name-only`, { encoding: 'utf-8', cwd: wd }).trim();
+      }
+    } catch { /* ignore */ }
+  }
+
+  const pageGenOptions: PageGenOptions = {
+    parallel, concurrency,
+    updateMode, oldContentCache, changedFilesInfo,
+  };
+
   logInfo('Phase 2: Generating Wiki pages...');
-  let failed = await generatePages(client, config, workDir, topics, { parallel, concurrency });
+  let failed = await generatePages(client, config, workDir, topics, pageGenOptions);
 
   let retriesLeft = opts.retry ?? 0;
   while (failed.length > 0 && retriesLeft > 0) {
     logWarning(`${failed.length} page(s) failed. Retrying (${retriesLeft} left)...`);
-    const retryResult = await generatePages(client, config, workDir, topics, { parallel, concurrency, retryList: [...failed] });
+    const retryResult = await generatePages(client, config, workDir, topics, { ...pageGenOptions, retryList: [...failed] });
     failed = retryResult;
     retriesLeft--;
   }
@@ -178,7 +224,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
       ]);
       if (!retry) break;
       logInfo(`Retrying ${failed.length} page(s)...`);
-      const r = await generatePages(client, config, workDir, topics, { parallel, concurrency, retryList: [...failed] });
+      const r = await generatePages(client, config, workDir, topics, { ...pageGenOptions, retryList: [...failed] });
       failed = r;
     }
   }
@@ -208,6 +254,10 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     meta.gitRemote = execSync('git remote get-url origin', { encoding: 'utf-8', cwd: workDir }).trim();
   } catch { /* no remote */ }
   await writeFile(join(finalDir, '.meta.json'), JSON.stringify(meta, null, 2));
+
+  // Save page dependency and content metadata
+  await savePageMetadata(finalDir);
+  logSuccess('Page metadata saved.');
 
   if (opts.browse) {
     logInfo('Starting browse server...');
@@ -293,6 +343,135 @@ async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir
   return [];
 }
 
+interface UpdatePlan {
+  action: 'update' | 'restructure';
+  update?: string[];
+  add?: Topic[];
+  remove?: string[];
+}
+
+async function updateAnalysis(
+  client: LLMClient,
+  config: WikiCliConfig,
+  workDir: string,
+  oldOutline: object,
+  changedFiles: string[],
+  affectedSlugs: string[],
+  pageDeps: PageDeps,
+  pageContentCache: Record<string, string>,
+  addedFiles: string[]
+): Promise<UpdatePlan> {
+  const osInfo = `${process.platform} ${process.arch}`;
+  const sysVars = { workDir, os: osInfo };
+  const systemPrompt = await renderPrompt('update-system.md', sysVars);
+
+  const changedSummary = changedFiles.map(f => {
+    const deps = Object.entries(pageDeps)
+      .filter(([, deps]) => deps[f])
+      .map(([slug]) => slug);
+    return `- ${f} 影响页面: ${deps.join(', ') || '(无)'}`;
+  }).join('\n');
+
+  const candidatesInfo = affectedSlugs.map(slug => {
+    const deps = pageDeps[slug];
+    if (!deps) return `- ${slug}.md: (无依赖记录)`;
+    const depLines = Object.entries(deps)
+      .map(([f, ranges]) => `    ${f}: ${ranges.map(r => `[${r[0]}-${r[1]}]`).join(', ')}`)
+      .join('\n');
+    return `- ${slug}.md:\n${depLines}`;
+  }).join('\n');
+
+  const pageContents = affectedSlugs.map(slug =>
+    `### ${slug}.md\n${pageContentCache[slug] || '(无缓存)'}`
+  ).join('\n\n');
+
+  const newFiles = addedFiles.length > 0
+    ? addedFiles.map(f => `- ${f}`).join('\n')
+    : '(无)';
+
+  const userVars = {
+    workDir,
+    outline: JSON.stringify(oldOutline, null, 2),
+    changedSummary,
+    candidatesInfo,
+    pageContents,
+    newFiles,
+    lang: config.lang,
+  };
+  const userPrompt = await renderPrompt('update-user.md', userVars);
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+
+  const useJsonMode = config.jsonMode === true;
+
+  let finalContent = '';
+  const maxIterations = 8;
+
+  for (let i = 0; i < maxIterations; i++) {
+    logInfo(`更新分析 / Round ${i + 1}...`);
+
+    try {
+      const fullContent = await collectFullResponse(
+        client, messages, config, false, useJsonMode,
+        getFilteredTools()
+      );
+
+      if (!fullContent) {
+        logError('更新分析无响应');
+        break;
+      }
+
+      finalContent = fullContent;
+      const cleaned = stripCodeFence(fullContent);
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.action === 'restructure') {
+          logSuccess('LLM 判定需要整体重构');
+          return { action: 'restructure' };
+        }
+        if (parsed.action === 'update') {
+          const plan: UpdatePlan = {
+            action: 'update',
+            update: parsed.update || [],
+            add: parsed.add || [],
+            remove: parsed.remove || [],
+          };
+          logSuccess(`更新分析完成: ${(plan.update || []).length} 个页面需更新, ${(plan.add || []).length} 个需新增, ${(plan.remove || []).length} 个需移除`);
+          return plan;
+        }
+      }
+
+      const response: ChatMessage = { role: 'assistant', content: fullContent };
+      messages.push(response);
+
+    } catch (err: any) {
+      logError(`错误: ${err.message}`);
+      break;
+    }
+  }
+
+  if (finalContent) {
+    const cleaned = stripCodeFence(finalContent);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.action === 'restructure') return { action: 'restructure' };
+        if (parsed.action === 'update') {
+          return { action: 'update', update: parsed.update || [], add: parsed.add || [], remove: parsed.remove || [] };
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  logWarning('无法解析更新计划，默认全部更新');
+  return { action: 'restructure' };
+}
+
 function parseOutlineJson(text: string): Topic[] {
   let cleaned = stripCodeFence(text);
 
@@ -346,7 +525,8 @@ async function collectFullResponse(
   messages: ChatMessage[],
   config: WikiCliConfig,
   stream: boolean,
-  jsonMode?: boolean
+  jsonMode?: boolean,
+  tools?: ToolDefinition[]
 ): Promise<string | null> {
   let accumulatedContent = '';
   let accumulatedReasoning = '';
@@ -363,7 +543,9 @@ async function collectFullResponse(
     let contentStarted = false;
     const toolCallsMap = new Map<string, ToolCall>();
 
-    const genTools = getFilteredTools().filter(t => !['list_wiki_pages', 'read_wiki', 'search_wiki', 'semantic_search'].includes(t.function.name));
+    const genTools = tools || getFilteredTools().filter(t =>
+      !['list_wiki_pages', 'read_wiki', 'search_wiki', 'semantic_search'].includes(t.function.name)
+    );
 
     if (stream) {
       const streamIter = client.chatStream(messages, genTools, jsonMode);
@@ -466,6 +648,14 @@ async function collectFullResponse(
         args = {};
       }
 
+      // Track page dependencies for --update mode
+      if (_currentPageSlug && tc.function.name === 'read_file' && args.file_path) {
+        const startLine = args.start_line || 1;
+        const endLine = args.end_line || 999999;
+        if (!_pageDeps[_currentPageSlug]) _pageDeps[_currentPageSlug] = [];
+        _pageDeps[_currentPageSlug].push({ file: args.file_path, lines: [startLine, endLine] });
+      }
+
       if (stream) logToolCall(tc.function.name, args);
       const result = await executeToolCall(tc.function.name, args);
       if (stream) logToolResult(tc.function.name, result);
@@ -491,6 +681,9 @@ interface PageGenOptions {
   parallel: boolean;
   concurrency: number;
   retryList?: Topic[];
+  updateMode?: boolean;
+  oldContentCache?: Record<string, string>;
+  changedFilesInfo?: string;
 }
 
 async function generatePages(
@@ -502,6 +695,9 @@ async function generatePages(
 ): Promise<Topic[]> {
   const pageTopics = options.retryList || allTopics.filter(t => !t.isGroup);
   const failed: Topic[] = [];
+  const updateMode = options.updateMode || false;
+  const oldContentCache = options.oldContentCache || {};
+  const changedFilesInfo = options.changedFilesInfo || '';
 
   const availablePages = allTopics
     .filter(t => !t.isGroup && t.slug)
@@ -530,6 +726,12 @@ async function generatePages(
       pageTitle: topic.title,
       audienceLevel: topic.level,
     };
+
+    const oldContent = oldContentCache[slug] || '';
+    const changeTrigger = updateMode && changedFilesInfo
+      ? `以下文件发生了变更，可能与此页面相关：\n${changedFilesInfo}`
+      : '';
+
     const pageUserVars = {
       workDir,
       pageTitle: topic.title,
@@ -539,6 +741,9 @@ async function generatePages(
       lang: config.lang,
       availablePages,
       pageTask: topic.task || '',
+      updateInstruction: updateMode ? '此页面需要更新。请基于旧版本修改，保留准确内容，只更新过时部分。新功能添加到相应位置。' : '',
+      oldContent: oldContent || '',
+      changeTrigger: changeTrigger || '',
     };
 
     const systemPrompt = await renderPrompt('page-system.md', pageSysVars);
@@ -549,10 +754,13 @@ async function generatePages(
       { role: 'user', content: userPrompt },
     ];
 
+    _currentPageSlug = slug;
     const fullContent = await collectFullResponse(client, messages, config, !options.parallel);
+    _currentPageSlug = null;
 
     if (fullContent) {
       await writeTextFile(pagePath, fullContent);
+      _pageContent[slug] = fullContent;
       if (options.parallel) {
         logSuccess(`[${index}/${total}] Generated: ${topic.title}`);
       } else {
@@ -594,6 +802,242 @@ async function runConcurrent(tasks: (() => Promise<void>)[], concurrency: number
       await Promise.race(running);
     }
   }
+}
+
+interface ResolveUpdateResult {
+  topics: Topic[];
+  updatePlan: UpdatePlan;
+  pageDeps: PageDeps;
+  pageContentCache: Record<string, string>;
+  latestDir: string;
+}
+
+async function resolveUpdateTarget(workDir: string): Promise<ResolveUpdateResult | null> {
+  const wikiDir = join(workDir, '.wiki');
+  if (!existsSync(wikiDir)) {
+    logWarning('没有找到现有 Wiki，回退到全量生成');
+    return null;
+  }
+  const entries = readdirSync(wikiDir, { withFileTypes: true });
+  const versions = entries
+    .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
+    .map(e => e.name)
+    .sort()
+    .reverse();
+  if (versions.length === 0) {
+    logWarning('没有找到 Wiki 版本，回退到全量生成');
+    return null;
+  }
+  const latestDir = join(wikiDir, versions[0]);
+
+  const metaPath = join(latestDir, '.meta.json');
+  if (!existsSync(metaPath)) {
+    logWarning('最新 Wiki 版本没有元数据，无法增量更新，回退到全量生成');
+    return null;
+  }
+  const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+  if (!meta.gitCommit) {
+    logWarning('元数据中没有 git commit 信息，无法增量更新，回退到全量生成');
+    return null;
+  }
+
+  const currentCommit = execSync('git rev-parse HEAD', { encoding: 'utf-8', cwd: workDir }).trim();
+  if (meta.gitCommit === currentCommit) {
+    logWarning('Wiki 已是最新，无需更新');
+    process.exit(0);
+  }
+
+  try {
+    execSync(`git cat-file -t ${meta.gitCommit}`, { encoding: 'utf-8', cwd: workDir, stdio: 'ignore' });
+  } catch {
+    logWarning('记录中的提交已不存在（rebase/gc），无法增量更新，回退到全量生成');
+    return null;
+  }
+
+  const indexJsonPath = join(latestDir, 'index.json');
+  if (!existsSync(indexJsonPath)) {
+    logWarning('没有 index.json，无法增量更新，回退到全量生成');
+    return null;
+  }
+  const outline = JSON.parse(readFileSync(indexJsonPath, 'utf-8'));
+  const topics = outline.sections
+    ? outline.sections.flatMap((s: any) => {
+        const sectionName = s.name || '';
+        return (s.topics || []).map((item: any) => {
+          if (item.type === 'group') {
+            return { title: item.title, level: '', slug: '', section: sectionName, isGroup: true } as Topic;
+          }
+          return {
+            title: item.title,
+            level: item.level || '中级',
+            slug: toSlug(item.title),
+            section: sectionName,
+            description: item.description || item.brief || '',
+            task: item.task || item.brief || '',
+          } as Topic;
+        });
+      })
+    : [];
+
+  if (topics.length === 0) {
+    logWarning('index.json 为空，无法增量更新，回退到全量生成');
+    return null;
+  }
+
+  let pageDeps: PageDeps = {};
+  const depsPath = join(latestDir, '.page-deps.json');
+  if (existsSync(depsPath)) {
+    pageDeps = JSON.parse(readFileSync(depsPath, 'utf-8'));
+  } else {
+    logWarning('没有页面依赖记录，增量更新将保守处理（标记所有页面）');
+  }
+
+  let pageContentCache: Record<string, string> = {};
+  const contentPath = join(latestDir, '.page-content.json');
+  if (existsSync(contentPath)) {
+    pageContentCache = JSON.parse(readFileSync(contentPath, 'utf-8'));
+  }
+
+  logInfo(`最新 Wiki 版本: ${versions[0]} (commit: ${meta.gitCommit.slice(0, 8)})`);
+  logInfo(`当前 HEAD: ${currentCommit.slice(0, 8)}`);
+
+  return { topics, updatePlan: { action: 'update' }, pageDeps, pageContentCache, latestDir };
+}
+
+async function resolveAndRunUpdate(
+  client: LLMClient,
+  config: WikiCliConfig,
+  workDir: string,
+  opts: GenerateOptions
+): Promise<{ topics: Topic[]; updatePlan: UpdatePlan } | null> {
+  const resolved = await resolveUpdateTarget(workDir);
+  if (!resolved) {
+    logInfo('回退到全量生成');
+    return null;
+  }
+
+  const { topics: oldTopics, pageDeps, pageContentCache, latestDir } = resolved;
+
+  const meta = JSON.parse(readFileSync(join(latestDir, '.meta.json'), 'utf-8'));
+  const oldCommit = meta.gitCommit;
+  let changedFiles: ChangedFile[];
+  try {
+    changedFiles = getChangedFiles(oldCommit, workDir);
+  } catch (err: any) {
+    logWarning(`获取变更文件失败: ${err.message}，回退到全量生成`);
+    return null;
+  }
+
+  if (changedFiles.length === 0) {
+    logWarning('没有检测到文件变更');
+    process.exit(0);
+  }
+
+  logInfo(`检测到 ${changedFiles.length} 个变更文件`);
+
+  const modifiedFiles = changedFiles.filter(f => f.status === 'modified').map(f => f.path);
+  const addedFiles = changedFiles.filter(f => f.status === 'added').map(f => f.path);
+  const deletedFiles = changedFiles.filter(f => f.status === 'deleted').map(f => f.path);
+
+  const affectedSlugs = [...getAffectedSlugs(pageDeps, changedFiles, workDir, oldCommit)];
+
+  for (const cf of changedFiles) {
+    if (cf.status === 'deleted' || cf.status === 'renamed') {
+      for (const [slug, deps] of Object.entries(pageDeps)) {
+        if (deps[cf.path] && !affectedSlugs.includes(slug)) {
+          affectedSlugs.push(slug);
+        }
+      }
+    }
+  }
+
+  logInfo(`文件变更影响 ${affectedSlugs.length} 个候选页面`);
+
+  const changedFilesInfoLines = [...modifiedFiles, ...deletedFiles];
+  if (addedFiles.length > 0) {
+    changedFilesInfoLines.push('--- 新增文件 ---');
+    changedFilesInfoLines.push(...addedFiles);
+  }
+  const changedFilesInfo = changedFilesInfoLines.join('\n');
+
+  logInfo('Phase 1 Update: 分析变更影响...');
+  const updatePlan = await updateAnalysis(
+    client, config, workDir,
+    JSON.parse(readFileSync(join(latestDir, 'index.json'), 'utf-8')),
+    [...modifiedFiles, ...deletedFiles],
+    affectedSlugs,
+    pageDeps,
+    pageContentCache,
+    addedFiles
+  );
+
+  if (updatePlan.action === 'restructure') {
+    logInfo('LLM 判定需要重新生成整个目录，回退到全量生成');
+    return null;
+  }
+
+  const removeSet = new Set(updatePlan.remove || []);
+  const addTopics = updatePlan.add || [];
+  const updateSet = new Set(updatePlan.update || []);
+
+  let finalUpdateSet: Set<string>;
+  if (Object.keys(pageDeps).length === 0 && affectedSlugs.length > 0) {
+    finalUpdateSet = new Set(affectedSlugs);
+  } else {
+    finalUpdateSet = updateSet;
+  }
+
+  logInfo(`Phase 2 Update: 更新 ${finalUpdateSet.size} 个页面, 新增 ${addTopics.length} 个, 移除 ${removeSet.size} 个`);
+  let copiedCount = 0;
+  for (const topic of oldTopics) {
+    if (!topic.slug) continue;
+    if (removeSet.has(topic.slug)) continue;
+    if (finalUpdateSet.has(topic.slug)) continue;
+
+    const oldPath = join(latestDir, `${topic.slug}.md`);
+    const newPath = join(TEMP_DIR, `${topic.slug}.md`);
+    if (existsSync(oldPath)) {
+      await ensureDir(TEMP_DIR);
+      await copyFile(oldPath, newPath);
+      copiedCount++;
+    }
+  }
+
+  if (copiedCount > 0) {
+    logInfo(`已复制 ${copiedCount} 个无需更改的页面`);
+  }
+
+  const updatedTopics: Topic[] = [];
+  for (const topic of oldTopics) {
+    if (removeSet.has(topic.slug)) continue;
+    updatedTopics.push(topic);
+  }
+  updatedTopics.push(...addTopics);
+
+  return { topics: updatedTopics, updatePlan };
+}
+
+async function savePageMetadata(wikiDir: string): Promise<void> {
+  const mergedDeps: PageDeps = {};
+  for (const [slug, entries] of Object.entries(_pageDeps)) {
+    const fileMap: Record<string, [number, number][]> = {};
+    for (const entry of entries) {
+      if (!fileMap[entry.file]) fileMap[entry.file] = [];
+      let merged = false;
+      for (const range of fileMap[entry.file]) {
+        if (entry.lines[0] <= range[1] && entry.lines[1] >= range[0]) {
+          range[0] = Math.min(range[0], entry.lines[0]);
+          range[1] = Math.max(range[1], entry.lines[1]);
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) fileMap[entry.file].push([...entry.lines]);
+    }
+    mergedDeps[slug] = fileMap;
+  }
+  await writeTextFile(join(wikiDir, '.page-deps.json'), JSON.stringify(mergedDeps, null, 2));
+  await writeTextFile(join(wikiDir, '.page-content.json'), JSON.stringify(_pageContent, null, 2));
 }
 
 async function generateIndex(wikiDir: string, topics: Topic[]): Promise<void> {
