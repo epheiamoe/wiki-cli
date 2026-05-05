@@ -685,7 +685,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="sidebar">
   <div class="sidebar-header">
     <h2>📖 Wiki</h2>
-    <button class="version-btn" onclick="showVersions()">历史版本</button>
+    <div style="display:flex;gap:4px">
+      <button class="version-btn" onclick="toggleChat()" title="AI 对话">💬</button>
+      <button class="version-btn" onclick="showVersions()">历史版本</button>
+    </div>
   </div>
   <ul>${sidebarHtml}</ul>
 </div>
@@ -716,6 +719,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <script>
 const currentVersion = ${JSON.stringify(currentVersion)};
 const wikiSlugs = ${JSON.stringify(slugs)};
+const chatEnabled = ${chatEnabled};
 
 // Navigation functions — defined first so sidebar works even if mermaid fails
 async function loadPage(encodedSlug) {
@@ -857,8 +861,8 @@ function addChatMsg(role, text) {
 
 // Restore chat state
 document.addEventListener('DOMContentLoaded', function() {
-  const chatOpen = localStorage.getItem('wikiChatOpen') === 'true';
-  if (chatOpen) {
+  const shouldOpen = localStorage.getItem('wikiChatOpen') === 'true' || chatEnabled;
+  if (shouldOpen) {
     document.getElementById('chatPanel').classList.add('open');
     document.getElementById('content').classList.add('chat-open');
   }
