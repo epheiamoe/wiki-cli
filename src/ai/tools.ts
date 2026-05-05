@@ -272,6 +272,8 @@ async function collectFiles(dir: string, result: string[], extensions?: string[]
   }
 }
 
+const MAX_FILE_CHARS = 30000;
+
 async function readFileTool(filePath: string, startLine?: number, endLine?: number): Promise<ToolResult> {
   try {
     if (!filePath || typeof filePath !== 'string') {
@@ -283,12 +285,31 @@ async function readFileTool(filePath: string, startLine?: number, endLine?: numb
     }
     const content = await readFile(absPath, 'utf-8');
     const lines = content.split('\n');
+
+    let result: string;
+    let actualStartLine = 1;
+    let actualEndLine = lines.length;
+
     if (startLine !== undefined) {
-      const s = Math.max(0, startLine - 1);
+      actualStartLine = startLine;
       const e = endLine !== undefined ? endLine : lines.length;
-      return { type: 'success', data: lines.slice(s, e).join('\n') };
+      actualEndLine = e;
+      result = lines.slice(Math.max(0, startLine - 1), e).join('\n');
+    } else {
+      result = content;
     }
-    return { type: 'success', data: content };
+
+    if (result.length > MAX_FILE_CHARS) {
+      const truncated = result.slice(0, MAX_FILE_CHARS);
+      const truncatedLines = truncated.split('\n').length;
+      const nextStartLine = actualStartLine + truncatedLines;
+      return {
+        type: 'success',
+        data: `${truncated}\n\n···（内容过长，已截断至 ${MAX_FILE_CHARS} 字符。文件总大小 ${content.length} 字符，共 ${lines.length} 行。当前显示第 ${actualStartLine}-${nextStartLine - 1} 行。如需继续阅读，请使用 read_file 指定 start_line=${nextStartLine}）`,
+      };
+    }
+
+    return { type: 'success', data: result };
   } catch (err: any) {
     return { type: 'error', data: err.message };
   }
