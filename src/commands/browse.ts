@@ -774,11 +774,22 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!href || href.startsWith('http') || href.startsWith('/api/') || href.startsWith('#') || href.startsWith('mailto:')) return;
     e.preventDefault();
     if (href.endsWith('.md')) {
-      loadPage(href.replace(/\\.md$/, ''));
+      loadPage(href.replace(/\.md$/, ''));
     } else {
       const srcPath = href.startsWith('/') ? href.slice(1) : href;
       window.open('/api/source/' + srcPath, '_blank');
     }
+  });
+
+  // Chat source link handling
+  document.getElementById('chatMessages').addEventListener('click', function(e) {
+    const anchor = e.target.closest('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href || href.startsWith('http') || href.startsWith('/api/') || href.startsWith('#') || href.startsWith('mailto:')) return;
+    e.preventDefault();
+    const srcPath = href.startsWith('/') ? href.slice(1) : href;
+    window.open('/api/source/' + srcPath, '_blank');
   });
 });
 

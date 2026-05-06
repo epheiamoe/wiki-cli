@@ -1,0 +1,82 @@
+{
+  "工具调用": {
+    "src/ai/tools.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/tool-call.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/ai.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/ai-session.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "skills/wiki-cli-tools/SKILL.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "tests/tools.test.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/commands/browse.ts": [
+      [
+        78,
+        115
+      ]
+    ],
+    "src/commands/generate.ts": [
+      [
+        535,
+        560
+      ]
+    ],
+    "src/ai/llm-client.ts": [
+      [
+        1,
+        50
+      ]
+    ],
+    "src/cli.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "prompts/ai-system.md": [
+      [
+        1,
+        999999
+      ]
+    ],
+    "src/ai/embeddings.ts": [
+      [
+        1,
+        999999
+      ]
+    ],
+    ".wiki/2026-05-05T22-23-50/ai-问答.md": [
+      [
+        1,
+        999999
+      ]
+    ]
+  }
+}
