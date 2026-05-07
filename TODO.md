@@ -2,29 +2,43 @@
 
 ## 近期
 
-- [ ] **增量 Wiki 更新（`--update`）**
-  - 生成时记录 `.meta.json`（gitCommit + 每个页面关联的 sourceFiles）
-  - 增量模式：`git diff` 找出变更文件，只重新生成受影响页面
-  - 未变更页面从上一版本复制
-  - 大变更（新主题、重构）才触发全量重新生成
+- [x] **增量 Wiki 更新（`--update`）**
+  - 生成时记录 `.page-deps.json`（每个页面 read_file 的文件+行号范围）
+  - `git diff` 行号重叠检测，定位受影响页面
+  - Phase 1 Update：LLM 分析变更影响（有 read_wiki 工具）
+  - Phase 2 Update：不变页面复制，仅再生受影响页
+  - 注入旧版本全文和变更文件列表给 AI
 
-- [ ] **opencode skill 集成优化**
-  - 根据反馈迭代 `skills/wiki-cli-tools/SKILL.md`
-  - 优化触发条件和描述文本
+- [ ] **`--update --experimental`（embedding 语义对比）**
+  - `git show oldCommit:file | slice [L1,L2]` 取出旧代码段
+  - 新旧代码分别做 embedding，计算 cosine similarity
+  - 低于阈值才标记重新生成（抗注释/重命名等假阳性）
+  - 与当前 --update 共享 Phase 2，仅替换 Phase 1 判定方式
+
+- [ ] **`--update --diff` 预览模式**
+  - 列出本次更新将影响的页面（不实际执行）
+  - 显示变更文件列表 + 推测的受影响页面 + 每个受影响页面的 tool call 次数
+
+- [ ] **进度网格改进**
+  - retry 场景也显示 grid（当前 `retryList` 被排除）
+  - progress-grid.ts terminal 宽度无法检测时的 fallback 处理
+
+- [ ] **`read_file` 行号前缀·续**
+  - 确认大文件截断场景下 `start_line` 提示的行号计算准确
+  - 考虑 `search_in_files` 等工具的 line number 引用一致性
 
 ## 中期
-
-- [ ] **Git diff 驱动的精准更新**
-  - AI 判断变更影响范围：仅改注释 vs 重命名 API vs 新增模块
-  - 更新 `.meta.json` 的 sourceFiles 关联
 
 - [ ] **`webFetch` 更多 Provider**
   - 支持 Firecrawl、自建 reader 等
   - Provider 插件化
 
-- [ ] **`generate --update` 交互式确认**
-  - 列出受影响的页面，让用户勾选哪些需要更新
-  - 支持查看 diff 后再决定
+- [ ] **Mermaid 暗色主题同步**
+  - browse 页面跟随系统/用户选择的主题切换 mermaid 图表
+
+- [ ] **`.gitignore` 自动管理**
+  - 确保克隆远程仓库后首次生成时 `.wiki/temp` 和 `.wiki/sessions/` 自动追加（当前 `ensureGitIgnore` 已做）
+  - 考虑 `.gitignore` 冲突合并场景（文件末尾无换行等）
 
 ## 远期
 
