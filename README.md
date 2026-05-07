@@ -3,28 +3,34 @@
 **One command.** Your entire codebase → beautifully structured Wiki, powered by LLM.
 
 ```bash
-wiki-cli generate     # ✨ 生成
-wiki-cli browse       # 📖 浏览
-wiki-cli ai           # 💬 问答
-wiki-cli tool-call    # 🔧 工具调用（给 AI agent 用）
+wiki-cli generate     # ✨ 生成 Wiki 文档
+wiki-cli browse       # 📖 本地浏览（含 AI 问答面板）
+wiki-cli ai           # 💬 代码库 AI 问答
+wiki-cli status       # 📊 查看 Wiki 版本与代码差异
+wiki-cli cache        # 📦 管理缓存的远程仓库
+wiki-cli config       # ⚙️ 配置 LLM / Embedding / WebFetch
+wiki-cli tool-call    # 🔧 工具调用接口（给 AI agent 用）
 ```
 
 ---
 
-## ✨ What makes this special?
+## ✨ 特性
 
 | 能力 | 一句话 |
 |------|--------|
-| **任何 LLM** | OpenAI / DeepSeek / Claude / Gemini / Grok / Kimi / Mistral / 自定义，通吃 |
-| **两阶段生成** | 先出大纲（JSON），再并发写页面——快且可控 |
-| **流式输出** | AI 吐出每个字实时可见，还能看到推理过程 |
-| **Tool Call** | LLM 自己调工具读源码、列目录、搜 Wiki，给答案带真实代码证据 |
-| **断点续传** | Ctrl+C 中断？再跑一次从上次继续，不浪费 token |
-| **语义搜索** | 可选 Embedding 模型注入，AI 问答时能搜 Wiki 找相关页面 |
-| **会话管理** | AI 对话可 /save /undo /switch，退出时显示续行命令 |
-| **远程仓库** | `--url git@github.com:xxx` 直接克隆并生成 |
-| **本地浏览** | 内置 HTTP Server，语法高亮 + Mermaid 图表 + 版本切换 |
-| **跨平台** | Windows / macOS / Linux 通杀 |
+| **任何 LLM** | OpenAI / DeepSeek / Claude / Gemini / Grok / Kimi / Mistral / 自定义 |
+| **两阶段生成** | 先出结构化大纲，再并发写页面——快且可控 |
+| **增量更新** | `--update` 只重新生成受 Git 变更影响的页面，不变页面直接复用 |
+| **流式输出** | AI 吐出每个字实时可见，包含推理过程 |
+| **Tool Call** | LLM 自己调工具读源码、列目录、搜 Wiki，答案附代码证据与行号 |
+| **断点续传** | Ctrl+C 中断后重跑，从上次继续，不浪费 token |
+| **语义搜索** | 可选 Embedding 模型注入，AI 问答自动检索 Wiki 页面 |
+| **会话管理** | 保存/恢复对话历史，跨项目全局索引 |
+| **远程仓库** | `--url` 直接克隆并生成，自动缓存至 `~/.wiki-cli/repos/` |
+| **缓存管理** | `cache` 命令管理克隆仓库，删除时自动存档 Wiki 到 `wiki-archives/`，重新克隆自动恢复 |
+| **临时模式** | `--temp` 一次性生成，完成后自动清理 |
+| **本地浏览** | 内置 HTTP Server，代码高亮 + Mermaid 渲染 + 版本切换 + AI 问答侧边栏 |
+| **跨平台** | Windows / macOS / Linux |
 
 ---
 
@@ -36,22 +42,18 @@ wiki-cli tool-call    # 🔧 工具调用（给 AI agent 用）
 wiki-cli config
 ```
 
-交互式选择：Provider → Model → API Key → 语言。
-
-也可以跳过交互，一把梭：
+交互式选择：Provider → Model → API Key → 语言。也可一把梭：
 
 ```bash
-wiki-cli config --provider DeepSeek --model deepseek-v4-flash --api-key sk-xxx --lang zh
+wiki-cli config --provider DeepSeek --model deepseek-v4-flash --base-url https://api.deepseek.com --api-key sk-xxx --lang zh
 ```
 
-只配 LLM 或只配 Embedding：
+单项配置（在已有配置基础上只改该项）：
 
 ```bash
 wiki-cli config --llm-only
 wiki-cli config --embedding-only
 ```
-
-配置保存到 `~/.wiki-cli/config.json`，一次配好到处用。
 
 ### 2. 生成 Wiki
 
@@ -59,8 +61,14 @@ wiki-cli config --embedding-only
 # 当前目录（必须是 git 仓库）
 wiki-cli generate
 
-# 远程仓库
+# 远程仓库（自动缓存）
 wiki-cli generate --url https://github.com/user/repo.git
+
+# 临时模式：一次性生成，用完即删
+wiki-cli generate --url https://github.com/user/repo.git --temp
+
+# 增量更新：只再生受代码变更影响的页面
+wiki-cli generate --update
 
 # 指定分支（本地或远程）
 wiki-cli generate -b main
@@ -68,47 +76,58 @@ wiki-cli generate -b main
 # 并发生成（快 3-5 倍）
 wiki-cli generate --parallel -c 5
 
-# 生成完自动打开浏览器
-wiki-cli generate --browse
-
-# 静默模式，全自动
+# 静默模式 + 全自动
 wiki-cli generate --silent --parallel --browse
-
-# 输出到自定义目录
-wiki-cli generate -o ./docs/wiki
 ```
 
-两阶段内部流程：
+**两阶段流程：**
 
 ```
-Phase 1: 分析仓库 → LLM 生成大纲（JSON）
-Phase 2: 逐个/并发生成页面 → 保存到 .wiki/<timestamp>/
+Phase 1:  分析仓库 → LLM 迭代探索（最多 25 轮 Tool Call）→ 输出 JSON 大纲
+Phase 2:  并发/顺序生成每个页面 → 保存到 .wiki/<timestamp>/
+          ─ 断点续传：已生成的页面自动跳过
+          ─ 失败重试：最多 N 次重试 (--retry N)
 ```
 
-如果网络不好、仓库没更新，会问你是不是要重新生成——不浪费你的 API 额度。
-
-### 3. 浏览
+### 3. 增量更新 (`--update`)
 
 ```bash
-# 当前项目的 Wiki
+# 基于当前代码与上次生成之间的 git diff，只再生受影响的页面
+wiki-cli generate --update
+```
+
+工作原理：
+
+```
+git diff <上次生成时的 commit>..HEAD
+  → 提取变更文件的行号范围
+  → 对比 .page-deps.json 中的文件依赖 → 定位受影响页面
+  → Phase 1 Update: LLM 用 read_wiki 工具分析变更影响
+  → Phase 2 Update: 未变更页面直接复制旧版本，仅再生受影响的页面
+```
+
+### 4. 浏览
+
+```bash
+# 当前项目 Wiki
 wiki-cli browse
 
-# 指定路径
+# 指定路径（项目目录 或 .wiki 目录 或版本目录）
 wiki-cli browse --path /path/to/project
 
-# 缓存仓库（之前 --url 生成的）
+# 远程仓库的缓存 Wiki 或存档 Wiki
 wiki-cli browse --url https://github.com/user/repo.git
 ```
 
 浏览器打开后：
 
 - 左侧：导航目录（带难度标记 🟢🟡🔴）
-- 右侧：渲染后的 Markdown，代码高亮
+- 右侧：渲染后的 Markdown，代码高亮 + Mermaid 自动渲染
 - `[来源：src/foo.ts#L12-L34]` 点开直接看源码（行号高亮）
-- Mermaid 流程图自动渲染
-- 顶部可切换历史版本
+- 右上角版本切换：浏览所有历史版本
+- AI 侧边栏：与代码库对话（支持推理过程、工具调用、slash 命令）
 
-### 4. AI 问答
+### 5. AI 问答
 
 ```bash
 # 交互式
@@ -122,56 +141,97 @@ wiki-cli ai -a "解释 main 函数的逻辑"
 
 # 恢复上次会话
 wiki-cli ai --session <id>
+
+# 远程仓库
+wiki-cli ai -u https://github.com/user/repo.git "authentication 流程"
 ```
 
-交互式命令：
+交互式内建命令：
 
 ```
-/exit /quit   退出（显示续行命令）
-/undo         撤回上一条对话
-/save         手动保存
-/sessions     列出所有会话
-/switch <id>  切换会话
-/wiki         生成 Wiki
-/new          新会话
+/help     显示帮助
+/exit     退出（显示续行命令）
+/undo     撤回上一条
+/save     手动保存
+/sessions 列出所有会话
+/switch   切换会话
+/new      新会话
+/wiki     生成 Wiki
 ```
 
-问答中按 **Ctrl+C** 打断 AI 输出，不会退出会话。
+Ctrl+C 打断 AI 输出，不退出会话。配置 Embedding 后 AI 自动语义搜索 Wiki 页面。
 
-如果有 Embedding 配置，AI 会自动搜 Wiki 找相关页面来回答问题。
+### 6. 查看状态
 
-### 5. Tool Call（给 AI agent 用）
+```bash
+# 查看当前 Wiki 与代码库的差异状态
+wiki-cli status
+
+# 指定版本
+wiki-cli status -v 2026-05-07T19-23-03
+
+# 显示详细变更日志
+wiki-cli status --log
+wiki-cli status --stat
+```
+
+输出展示：生成时间、分支、远程仓库、基于的 commit、落后 commit 数、最新/过时状态。
+
+### 7. 缓存管理
+
+```bash
+# 交互式菜单（列出→选择→删除）
+wiki-cli cache
+
+# 列出所有缓存
+wiki-cli cache --ls
+
+# 删除指定缓存（默认 --keep-wiki：存档到 ~/.wiki-cli/wiki-archives/）
+wiki-cli cache --rm <name>
+
+# 清空所有缓存
+wiki-cli cache --all
+
+# 确认快速删除
+wiki-cli cache --rm <name> -y
+```
+
+删除时 `--keep-wiki`（默认）将 Wiki 存档至 `~/.wiki-cli/wiki-archives/<name>/`。当通过 `--url` 重新克隆时，自动检测存档并询问是否恢复。
+
+### 8. Tool Call（给 AI agent 用）
 
 ```bash
 # 列出可用工具
 wiki-cli tool-call --help
 
 # 调用工具，输出 JSON
-wiki-cli tool-call semantic_search '{"query": "authentication"}'
 wiki-cli tool-call read_wiki '{"slug": "project-architecture"}'
+wiki-cli tool-call semantic_search '{"query": "authentication"}'
 wiki-cli tool-call fetch_web_markdown '{"url": "https://example.com/docs"}'
 ```
 
-任何支持 shell 执行的 AI agent（包括 opencode）都可以通过这个接口使用 wiki-cli 的内置工具：
+可用工具：
 
 | 工具 | 说明 |
 |------|------|
-| `semantic_search` | 语义搜索 Wiki（需配置 Embedding） |
-| `fetch_web_markdown` | 抓取 URL 并转为 Markdown（Jina Reader） |
-| `list_wiki_pages` | 列出所有 Wiki 页面 |
-| `read_wiki` | 按 slug 读取 Wiki 页面 |
-| `search_wiki` | 关键词搜索 Wiki |
+| `read_file` | 读取文件（带行号前缀，支持大文件截断续传） |
 | `list_directory` | 列出目录结构 |
 | `list_files` | 按扩展名过滤文件 |
-| `read_file` | 读取文件内容 |
 | `search_in_files` | 全文搜索 |
-| `git_log` / `git_show` / `git_remote_info` | Git 操作 |
+| `git_log` | Git 提交历史 |
+| `git_show` | Git 提交详情 |
+| `git_remote_info` | 远程仓库信息 |
 | `dotenv_template` | 读取 `.env.example` |
+| `semantic_search` | 语义搜索 Wiki（需 Embedding） |
+| `fetch_web_markdown` | 抓取 URL 转 Markdown（Jina Reader） |
+| `list_wiki_pages` | 列出 Wiki 页面 |
+| `read_wiki` | 按 slug 读取 Wiki |
+| `search_wiki` | 关键词搜索 Wiki |
 
-输出纯 JSON 到 stdout，方便管道和脚本处理：
+输出纯 JSON：
 
 ```json
-{"type":"success","data":"...content..."}
+{"type":"success","data":"..."}
 ```
 
 ---
@@ -188,7 +248,7 @@ wiki-cli tool-call fetch_web_markdown '{"url": "https://example.com/docs"}'
 | Kimi (Moonshot) | kimi-k2.6 | ✅ |
 | Mistral | mistral-large-3, devstral-2 | ✅ |
 
-自定义 Provider：配 base URL 和模型名即可，支持不兼容 JSON 模式的模型。
+自定义 Provider：配置 Base URL + 模型名即可，支持不兼容 JSON 模式的模型。
 
 ---
 
@@ -199,25 +259,38 @@ wiki-cli/
 ├── src/
 │   ├── cli.ts                     # 入口，Commander 注册所有命令
 │   ├── commands/
-│   │   ├── config.ts              # 交互式配置（LLM + Embedding）
-│   │   ├── generate.ts            # 两阶段 Wiki 生成
-│   │   ├── browse.ts              # 本地 HTTP 浏览服务器
-│   │   └── ai.ts                  # AI 问答（会话/工具/Embedding）
+│   │   ├── config.ts              # 交互式配置（LLM + Embedding + WebFetch + RepoDirs）
+│   │   ├── generate.ts            # 两阶段生成 + 增量更新 + 断点续传 + 重试
+│   │   ├── browse.ts              # HTTP 浏览服务器 + 渲染 + AI 侧边栏聊天
+│   │   ├── ai.ts                  # 交互式/单次 AI 问答 + 会话管理
+│   │   ├── status.ts              # Wiki 版本状态与 git 比较
+│   │   ├── cache.ts               # 缓存仓库管理（ls / rm / archive）
+│   │   └── tool-call.ts           # 工具执行接口（给 AI agent 用）
 │   ├── ai/
-│   │   ├── llm-client.ts          # OpenAI 兼容客户端（流式+非流式）
-│   │   ├── tools.ts               # 12 个只读工具（文件/git/wiki/search）
-│   │   ├── embeddings.ts          # 语义搜索 + 缓存
-│   │   ├── ai-session.ts          # 会话 CRUD
+│   │   ├── llm-client.ts          # OpenAI 兼容客户端（流式 + 非流式 + 重试）
+│   │   ├── tools.ts               # 13 个只读工具
+│   │   ├── embeddings.ts          # 语义搜索 + 模型版本化缓存
+│   │   ├── ai-session.ts          # 会话 CRUD + 全局索引
 │   │   └── prompts.ts             # 渲染 prompt 模板
 │   ├── config/
-│   │   └── config-store.ts        # 配置持久化 + 模型列表
+│   │   └── config-store.ts        # 配置持久化 + 模型清单
 │   └── utils/
-│       ├── file.ts                # 文件/时间戳/路径
-│       ├── workspace.ts           # 工作目录解析（-C/-u/-o/-b）
-│       ├── git.ts                 # 克隆/更新/checkout
-│       └── progress.ts            # 进度显示
-├── prompts/                       # prompt 模板（.md 解耦）
+│       ├── file.ts                # 文件/目录/时间戳/路径工具
+│       ├── workspace.ts           # 工作目录解析（-C/-u/-o/-b/-t）+ 存档管理
+│       ├── git.ts                 # 克隆/拉取/checkout + .gitignore 自动管理
+│       ├── diff.ts                # git diff 解析 + 行号重叠检测（--update）
+│       ├── progress-grid.ts       # 并行模式的 ANSI 进度显示
+│       └── progress.ts            # 通用进度/日志输出
+├── prompts/                       # prompt 模板（.md 解耦，不改代码也能调）
+│   ├── ai-system.md               # AI 问答系统提示
+│   ├── outline-system.md          # 大纲生成系统提示
+│   ├── outline-user.md            # 大纲生成用户提示
+│   ├── page-system.md             # 页面生成系统提示
+│   ├── page-user.md               # 页面生成用户提示
+│   ├── update-system.md           # 增量更新分析系统提示
+│   └── update-user.md             # 增量更新分析用户提示
 ├── tests/                         # 71 个测试（vitest）
+├── skills/                        # opencode agent skill
 └── package.json
 ```
 
@@ -226,24 +299,22 @@ wiki-cli/
 ## 🧪 测试
 
 ```bash
-# 跑全部
-npm test
-
-# 监视模式
-npm run test:watch
-
-# 当前覆盖率：71 tests, 6 test files
+npm test           # 跑全部（71 tests, 6 files）
+npm run test:watch # 监视模式
 ```
 
 ---
 
 ## 🧠 设计原则
 
-- **Prompt 与代码分离**：所有 prompt 是独立的 `.md` 文件，不改代码也能调
-- **只读工具**：LLM 只能读文件、列目录、搜代码，不改你的项目
-- **JSON 大纲**：结构化的大纲让后续页面能互相引用，写出来的文档不孤立
-- **缓存版本化**：Embedding 缓存带 `_model` 元数据，换模型自动重算
-- **会话持久化**：AI 问答历史存在 `.wiki/sessions/`，随时恢复
+- **Prompt 与代码分离**：所有 prompt 是独立 `.md` 文件，不改代码也能调
+- **只读工具**：LLM 只能读文件、列目录、搜代码，不修改你的项目
+- **JSON 大纲**：结构化大纲让后续页面能互相引用，文档不孤立
+- **缓存版本化**：Embedding 缓存带模型元数据，换模型自动重算
+- **会话持久化** + 全局索引：本地 `.wiki/sessions/` + `~/.wiki-cli/sessions-index.json`
+- **增量更新**：依赖追踪 + git diff 行号重叠，精准定位受影响页面
+- **Wiki 存档**：删除缓存仓库时自动存档 Wiki，克隆时自动恢复
+- **隐私保护**：`--temp` 模式用完即删，`.wiki/temp` 和 `sessions` 自动 gitignore
 
 ---
 

@@ -63,6 +63,26 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     temp: opts.temp,
   });
 
+  // Register signal handler for temp-mode cleanup
+  let cleanupDone = false;
+  const runCleanup = async (): Promise<void> => {
+    if (!cleanup || cleanupDone) return;
+    cleanupDone = true;
+    await cleanup();
+  };
+  if (cleanup) {
+    const onSignal = async () => {
+      if (cleanupDone) return;
+      cleanupDone = true;
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+      await cleanup();
+      process.exit(0);
+    };
+    process.on('SIGINT', onSignal);
+    process.on('SIGTERM', onSignal);
+  }
+
   const workDir = resolve(process.cwd());
 
   ensureGitIgnore(workDir);
@@ -274,7 +294,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   if (opts.silent) {
     console.log(`Result: ${topics.filter(t => !t.isGroup).length} pages, ${failed.length} failed`);
-    if (cleanup) await cleanup();
+    await runCleanup();
     return;
   }
 
@@ -287,7 +307,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     return;
   }
 
-  if (cleanup) await cleanup();
+  await runCleanup();
 }
 
 async function generateOutline(client: LLMClient, config: WikiCliConfig, workDir: string): Promise<Topic[]> {

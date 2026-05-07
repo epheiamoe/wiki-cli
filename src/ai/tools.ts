@@ -280,10 +280,22 @@ async function readFileTool(filePath: string, startLine?: number, endLine?: numb
       return { type: 'error', data: 'file_path is required' };
     }
     const absPath = resolve(filePath);
-    if (!existsSync(absPath)) {
+    let content: string | null = null;
+    if (existsSync(absPath)) {
+      content = await readFile(absPath, 'utf-8');
+    } else if (_remoteFallback) {
+      // Try remote fallback from raw.githubusercontent.com
+      const remoteUrl = `${_remoteFallback.rawBaseUrl}/${filePath.replace(/\\/g, '/')}`;
+      try {
+        const res = await fetch(remoteUrl, { signal: AbortSignal.timeout(10000) });
+        if (res.ok) content = await res.text();
+      } catch {
+        // ignore
+      }
+    }
+    if (content === null) {
       return { type: 'error', data: `File not found: ${filePath}` };
     }
-    const content = await readFile(absPath, 'utf-8');
     const lines = content.split('\n');
 
     let actualStartLine = 1;
@@ -360,6 +372,15 @@ async function searchInDir(root: string, dir: string, regex: RegExp, extensions:
 }
 
 let projectRoot: string | null = null;
+let _remoteFallback: { rawBaseUrl: string; commit: string } | null = null;
+
+export function setRemoteFallback(rawBaseUrl: string): void {
+  _remoteFallback = { rawBaseUrl, commit: '' };
+}
+
+export function clearRemoteFallback(): void {
+  _remoteFallback = null;
+}
 
 async function gitLog(maxCount?: number, path?: string): Promise<ToolResult> {
   try {

@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { logInfo, logWarning, logError } from '../utils/progress.js';
-import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
+import { findExistingRepoDir, defaultRepoDir, findArchiveDir } from '../utils/workspace.js';
+import { getRemoteSourceInfo } from '../utils/remote-source.js';
 import chalk from 'chalk';
 import { basename } from 'node:path';
 
@@ -22,6 +23,10 @@ export async function statusCommand(options: StatusOptions = {}): Promise<void> 
   if (options.url) {
     const repoDir = findExistingRepoDir(options.url) || defaultRepoDir(options.url);
     wikiDir = join(repoDir, '.wiki');
+    if (!existsSync(wikiDir)) {
+      const archive = findArchiveDir(options.url);
+      if (archive) wikiDir = archive;
+    }
   } else if (options.dir) {
     const base = resolve(options.dir);
     wikiDir = existsSync(join(base, '.wiki')) ? join(base, '.wiki') : base;
@@ -87,8 +92,14 @@ export async function statusCommand(options: StatusOptions = {}): Promise<void> 
   }
 
   if (!currentCommit) {
+    const remote = getRemoteSourceInfo(wikiDir);
     console.log(`   基于提交:  ${formatCommit(meta.gitCommit)}`);
-    console.log(`   状态:      ${chalk.yellow('⚠ 当前不在 git 仓库，无法比较')}`);
+    if (remote) {
+      console.log(`   远程:      ${remote.webUrl}`);
+      console.log(`   状态:      ${chalk.yellow('⚠ 存档 Wiki，源码已不可用')}`);
+    } else {
+      console.log(`   状态:      ${chalk.yellow('⚠ 当前不在 git 仓库，无法比较')}`);
+    }
     return;
   }
 

@@ -11,9 +11,10 @@ import { logInfo, logSuccess, logError } from '../utils/progress.js';
 import { stripCodeFence } from '../ai/llm-client.js';
 import { LLMClient } from '../ai/llm-client.js';
 import type { ChatMessage, ToolCall } from '../ai/llm-client.js';
-import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
+import { findExistingRepoDir, defaultRepoDir, findArchiveDir } from '../utils/workspace.js';
+import { getRemoteSourceInfo, fetchRemoteSource } from '../utils/remote-source.js';
 import { loadConfig } from '../config/config-store.js';
-import { initTools, getFilteredTools, executeToolCall } from '../ai/tools.js';
+import { initTools, getFilteredTools, executeToolCall, setRemoteFallback } from '../ai/tools.js';
 import { createSession, loadSession, saveSession } from '../ai/ai-session.js';
 
 const require = createRequire(import.meta.url);
@@ -22,6 +23,7 @@ const require = createRequire(import.meta.url);
 marked.use(markedHighlight({
   langPrefix: 'hljs language-',
   highlight(code, lang) {
+    if (lang === 'mermaid') return escapeHtml(code);
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(code, { language: lang }).value;
     }
@@ -50,6 +52,10 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
   } else if (options?.url) {
     const repoDir = findExistingRepoDir(options.url) || defaultRepoDir(options.url);
     wikiDir = join(repoDir, '.wiki');
+    if (!existsSync(wikiDir)) {
+      const archive = findArchiveDir(options.url);
+      if (archive) wikiDir = archive;
+    }
   } else {
     wikiDir = join(resolve(process.cwd()), '.wiki');
   }
@@ -77,6 +83,11 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
   const latest = timestamps[0];
   logInfo(`Browsing Wiki: ${latest}`);
   const allVersions = timestamps;
+
+  // Detect remote source for archive mode (no local source code)
+  let remoteSource = getRemoteSourceInfo(join(wikiDir, latest));
+  if (!remoteSource) remoteSource = getRemoteSourceInfo(wikiDir);
+  if (remoteSource) setRemoteFallback(remoteSource.rawBaseUrl);
 
   // Chat: load config for AI panel
   const config = await loadConfig();
@@ -286,7 +297,7 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
         const mdPath = join(wikiPath, `${slug}.md`);
         if (existsSync(mdPath)) {
           const content = await readFile(mdPath, 'utf-8');
-          const html = await marked.parse(content);
+          const html = fixMermaidBlocks(await marked.parse(content));
           const fixed = fixContentReferences(html);
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(fixed);
@@ -306,13 +317,29 @@ export async function browseCommand(options?: BrowseOptions): Promise<void> {
           return;
         }
         const fullPath = join(projectRoot, safePath);
-        if (!existsSync(fullPath)) {
+        let content: string | null = null;
+        if (existsSync(fullPath)) {
+          content = await readFile(fullPath, 'utf-8');
+        } else if (remoteSource) {
+          content = await fetchRemoteSource(safePath, remoteSource);
+          if (content === null) {
+            // try other versions' meta for different commit
+            for (const v of allVersions) {
+              if (v === latest) continue;
+              const meta = getRemoteSourceInfo(join(wikiDir, v));
+              if (meta) {
+                content = await fetchRemoteSource(safePath, meta);
+                if (content) break;
+              }
+            }
+          }
+        }
+        if (!content) {
           res.writeHead(404);
           res.end('Source file not found');
           return;
         }
-        const content = await readFile(fullPath, 'utf-8');
-        const ext = extname(fullPath);
+        const ext = extname(fullPath) || extname(safePath);
         const langName = extToLang(ext);
         const fileName = pathname.slice(12);
 
@@ -549,6 +576,10 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function fixMermaidBlocks(html: string): string {
+  return html.replace(/<pre><code class="hljs language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>');
+}
+
 function fixContentReferences(html: string): string {
   return html.replace(/\[来源：([^\]]+)\]/g, '<a href="/api/source/$1" target="_blank" class="source-ref">[来源]</a>');
 }
@@ -599,7 +630,7 @@ async function serveHtml(
   let firstContent = '';
   if (firstPage && existsSync(firstPage)) {
     const md = await readFile(firstPage, 'utf-8');
-    firstContent = fixContentReferences(await marked.parse(md));
+    firstContent = fixContentReferences(fixMermaidBlocks(await marked.parse(md)));
   }
 
   const sidebarHtml = buildSidebarHtml(sidebarItems);

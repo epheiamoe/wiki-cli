@@ -5,6 +5,7 @@ import { generateCommand } from './commands/generate.js';
 import { browseCommand } from './commands/browse.js';
 import { statusCommand } from './commands/status.js';
 import { aiCommand } from './commands/ai.js';
+import { cacheCommand } from './commands/cache.js';
 import { toolCallCommand } from './commands/tool-call.js';
 import { logError } from './utils/progress.js';
 
@@ -101,6 +102,29 @@ program
         url: options.url,
         log: options.log,
         stat: options.stat,
+      });
+    } catch (err: any) {
+      logError(err.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('cache')
+  .description('Manage cached remote repositories')
+  .option('--ls', 'List all cached repos')
+  .option('--rm <name>', 'Remove cached repo by name (partial match)')
+  .option('--all', 'Remove all cached repos')
+  .option('--no-keep-wiki', 'Delete wiki archive along with repo')
+  .option('-y, --yes', 'Skip confirmation')
+  .action(async (options) => {
+    try {
+      await cacheCommand({
+        ls: options.ls,
+        rm: options.rm,
+        all: options.all,
+        keepWiki: options.keepWiki !== false,
+        yes: options.yes,
       });
     } catch (err: any) {
       logError(err.message);

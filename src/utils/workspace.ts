@@ -2,10 +2,11 @@ import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { ensureRepo } from './git.js';
 import { logInfo, logError } from './progress.js';
+import { moveDir, removeDir } from './file.js';
 
 export interface WorkDirResult {
   workDir: string;
@@ -15,8 +16,9 @@ export interface WorkDirResult {
 }
 
 const DEFAULT_REPO_DIR = join(homedir(), '.wiki-cli', 'repos');
+const ARCHIVE_BASE = join(homedir(), '.wiki-cli', 'wiki-archives');
 
-function getRepoDirs(): string[] {
+export function getRepoDirs(): string[] {
   try {
     const cfgPath = join(homedir(), '.wiki-cli', 'config.json');
     if (existsSync(cfgPath)) {
@@ -27,7 +29,7 @@ function getRepoDirs(): string[] {
   return [DEFAULT_REPO_DIR];
 }
 
-function urlToDirName(url: string): string {
+export function urlToDirName(url: string): string {
   const cleaned = url
     .replace(/^https?:\/\//, '')
     .replace(/\.git$/, '')
@@ -46,6 +48,71 @@ export function findExistingRepoDir(url: string): string | null {
     if (existsSync(candidate)) return candidate;
   }
   return null;
+}
+
+export function archiveDirFor(url: string): string {
+  return join(ARCHIVE_BASE, urlToDirName(url), '.wiki');
+}
+
+export function findArchiveDir(url: string): string | null {
+  const dir = archiveDirFor(url);
+  return existsSync(dir) ? dir : null;
+}
+
+export async function restoreWikiFromArchive(url: string, repoDir: string): Promise<boolean> {
+  const archive = findArchiveDir(url);
+  if (!archive) return false;
+  const target = join(repoDir, '.wiki');
+  if (existsSync(target)) return false;
+  await moveDir(archive, target);
+  logInfo(`Restored ${archive} → ${target}`);
+  return true;
+}
+
+export async function moveWikiToArchive(url: string, repoDir: string): Promise<string | null> {
+  const wikiDir = join(repoDir, '.wiki');
+  if (!existsSync(wikiDir)) return null;
+  const dest = archiveDirFor(url);
+  const parent = dirname(dest);
+  if (!existsSync(parent)) await mkdir(parent, { recursive: true });
+  await moveDir(wikiDir, dest);
+  logInfo(`Archived ${wikiDir} → ${dest}`);
+  return dest;
+}
+
+/** Get wiki version count inside a directory (check .wiki/<ts>/index.json existence). */
+export async function countWikiVersions(wikiDir: string): Promise<number> {
+  try {
+    const entries = await readdir(wikiDir, { withFileTypes: true });
+    return entries.filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions').length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Human-readable directory size */
+export async function dirSize(dirPath: string): Promise<string> {
+  try {
+    let total = 0;
+    async function walk(dir: string): Promise<void> {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const e of entries) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name === 'node_modules') continue;
+          await walk(full);
+        } else {
+          try { total += (await stat(full)).size; } catch { /* skip */ }
+        }
+      }
+    }
+    await walk(dirPath);
+    if (total < 1024) return `${total} B`;
+    if (total < 1024 * 1024) return `${(total / 1024).toFixed(1)} KB`;
+    return `${(total / (1024 * 1024)).toFixed(1)} MB`;
+  } catch {
+    return '?';
+  }
 }
 
 export async function resolveWorkDir(options: {
@@ -78,9 +145,35 @@ export async function resolveWorkDir(options: {
       }
     }
 
+    const wasFreshClone = !existsSync(targetDir);
     const repoResult = await ensureRepo(url, targetDir, branch, depth);
     process.chdir(targetDir);
     logInfo(`Working directory: ${targetDir}`);
+
+    // Restore archived wiki on fresh clone
+    if (!temp && wasFreshClone) {
+      const archive = findArchiveDir(url);
+      if (archive) {
+        const versionsInArchive = await countWikiVersions(archive);
+        if (versionsInArchive > 0) {
+          logInfo(`检测到存档的 Wiki 文档（${versionsInArchive} 个版本），来自 ${archive}`);
+          let restore = true;
+          try {
+            const { default: inquirer } = await import('inquirer');
+            const { ok } = await inquirer.prompt([
+              { type: 'confirm', name: 'ok', message: '是否恢复存档 Wiki？', default: true },
+            ]);
+            restore = ok;
+          } catch { /* non-interactive — restore by default */ }
+          if (restore) {
+            await restoreWikiFromArchive(url, targetDir);
+            const { rm } = await import('node:fs/promises');
+            await rm(dirname(archive), { recursive: true, force: true });
+            logInfo('存档已删除（Wiki 已恢复到仓库中）');
+          }
+        }
+      }
+    }
 
     if (temp) {
       return {

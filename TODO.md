@@ -9,6 +9,19 @@
   - Phase 2 Update：不变页面复制，仅再生受影响页
   - 注入旧版本全文和变更文件列表给 AI
 
+- [x] **缓存管理命令（`wiki-cli cache`）**
+  - `ls`：列出所有缓存仓库（大小、Wiki 版本、最后活动）
+  - `rm`：删除缓存仓库（`--keep-wiki` 存档至 `~/.wiki-cli/wiki-archives/`）
+  - `rm --all`：清空所有缓存
+  - 交互式菜单模式
+  - browse/status `--url` 回退到存档目录
+  - `resolveWorkDir` 检测存档并询问恢复
+
+- [x] **`--temp` 清理修复**
+  - SIGINT/SIGTERM handler 覆盖所有退出路径
+  - `--browse` 路径正确清理
+  - 交互"打开浏览器"路径正确清理
+
 - [ ] **`--update --experimental`（embedding 语义对比）**
   - `git show oldCommit:file | slice [L1,L2]` 取出旧代码段
   - 新旧代码分别做 embedding，计算 cosine similarity
