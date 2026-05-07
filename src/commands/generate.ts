@@ -12,6 +12,7 @@ import type { ToolDefinition } from '../ai/tools.js';
 import type { WikiCliConfig } from '../config/config-store.js';
 import { ensureDir, writeTextFile, moveDir, getTimestamp, toSlug, removeDir } from '../utils/file.js';
 import { resolveWorkDir } from '../utils/workspace.js';
+import { ensureGitIgnore } from '../utils/git.js';
 import { getChangedFiles, getAffectedSlugs } from '../utils/diff.js';
 import type { PageDeps, ChangedFile } from '../utils/diff.js';
 import chalk from 'chalk';
@@ -60,6 +61,8 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   });
 
   const workDir = resolve(process.cwd());
+
+  ensureGitIgnore(workDir);
 
   // Repo not updated (network fallback) and wiki already exists → ask user
   if (updated === false) {

@@ -1,6 +1,35 @@
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { logInfo, logWarning } from './progress.js';
+
+const GITIGNORE_ENTRIES = ['.wiki/temp', '.wiki/sessions/'];
+
+export function ensureGitIgnore(workDir: string): void {
+  try {
+    execSync('git rev-parse --git-dir', { cwd: workDir, stdio: 'ignore' });
+  } catch {
+    return;
+  }
+
+  const gitignorePath = join(workDir, '.gitignore');
+  let content = '';
+  if (existsSync(gitignorePath)) {
+    content = readFileSync(gitignorePath, 'utf-8');
+  }
+
+  const lines = content.split('\n').map(l => l.trim());
+  const missing = GITIGNORE_ENTRIES.filter(e => !lines.includes(e));
+
+  if (missing.length === 0) return;
+
+  const toAppend = missing.join('\n');
+  if (content && !content.endsWith('\n')) {
+    appendFileSync(gitignorePath, '\n');
+  }
+  appendFileSync(gitignorePath, (content ? '\n' : '') + toAppend + '\n');
+  logInfo(`已添加至 .gitignore: ${missing.join(', ')}`);
+}
 
 export interface EnsureRepoResult {
   updated: boolean;
