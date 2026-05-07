@@ -747,13 +747,14 @@ async function generatePages(
     const pagePath = join(TEMP_DIR, `${slug}.md`);
     if (!options.retryList && existsSync(pagePath)) {
       if (!options.parallel) {
-        logInfo(`[${index}/${total}] Skipping already generated: ${topic.title}`);
+        logInfo(`[${index + 1}/${total}] Skipping already generated: ${topic.title}`);
       }
+      if (grid) grid.update(index, 'done', '');
       return;
     }
 
     if (!options.parallel) {
-      logInfo(`[${index}/${total}] Generating: ${topic.title} (${topic.level})`);
+      logInfo(`[${index + 1}/${total}] Generating: ${topic.title} (${topic.level})`);
     }
 
     const pageSysVars = {
@@ -806,7 +807,7 @@ async function generatePages(
       _pageContent[slug] = fullContent;
       if (!grid) {
         if (options.parallel) {
-          logSuccess(`[${index}/${total}] Generated: ${topic.title}`);
+          logSuccess(`[${index + 1}/${total}] Generated: ${topic.title}`);
         } else {
           logSuccess(`Generated: ${topic.title}`);
         }
@@ -825,7 +826,7 @@ async function generatePages(
     if (grid) grid.render();
     const total = pageTopics.length;
     await runConcurrent(
-      pageTopics.map((topic, i) => () => generateOne(topic, i + 1, total)),
+      pageTopics.map((topic, i) => () => generateOne(topic, i, total)),
       options.concurrency
     );
     if (grid) grid.finish();
