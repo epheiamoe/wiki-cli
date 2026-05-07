@@ -15,6 +15,7 @@ import { resolveWorkDir } from '../utils/workspace.js';
 import { ensureGitIgnore } from '../utils/git.js';
 import { getChangedFiles, getAffectedSlugs } from '../utils/diff.js';
 import type { PageDeps, ChangedFile } from '../utils/diff.js';
+import { ProgressGrid } from '../utils/progress-grid.js';
 import chalk from 'chalk';
 import { logInfo, logSuccess, logWarning, logError, logToolCall, logToolResult } from '../utils/progress.js';
 
@@ -24,6 +25,8 @@ const TEMP_DIR = '.wiki/temp';
 let _currentPageSlug: string | null = null;
 const _pageDeps: Record<string, Array<{ file: string; lines: [number, number] }>> = {};
 const _pageContent: Record<string, string> = {};
+
+type PageProgressFn = (type: 'thinking' | 'tool' | 'done', detail: string) => void;
 
 interface Topic {
   title: string;
@@ -529,7 +532,8 @@ async function collectFullResponse(
   config: WikiCliConfig,
   stream: boolean,
   jsonMode?: boolean,
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  onProgress?: PageProgressFn
 ): Promise<string | null> {
   let accumulatedContent = '';
   let accumulatedReasoning = '';
@@ -560,6 +564,8 @@ async function collectFullResponse(
             if (!reasoningStarted) {
               reasoningStarted = true;
               process.stdout.write(chalk.dim.yellow('\nThinking: '));
+              const snippet = chunk.reasoning_content.trim();
+              if (snippet) onProgress?.('thinking', snippet.slice(0, 40));
             }
             process.stdout.write(chalk.dim.yellow(chunk.reasoning_content));
           } else if (chunk.type === 'content') {
@@ -623,6 +629,7 @@ async function collectFullResponse(
         reasoning_content: currentReasoning || null,
       });
       if (stream) console.log();
+      onProgress?.('done', '');
       return currentContent;
     }
 
@@ -660,6 +667,7 @@ async function collectFullResponse(
       }
 
       if (stream) logToolCall(tc.function.name, args);
+      onProgress?.('tool', tc.function.name);
       const result = await executeToolCall(tc.function.name, args);
       if (stream) logToolResult(tc.function.name, result);
 
@@ -701,6 +709,11 @@ async function generatePages(
   const updateMode = options.updateMode || false;
   const oldContentCache = options.oldContentCache || {};
   const changedFilesInfo = options.changedFilesInfo || '';
+
+  // Create progress grid for parallel mode
+  const grid = options.parallel && !options.retryList
+    ? new ProgressGrid(pageTopics.map(t => t.title))
+    : null;
 
   const availablePages = allTopics
     .filter(t => !t.isGroup && t.slug)
@@ -758,29 +771,44 @@ async function generatePages(
     ];
 
     _currentPageSlug = slug;
-    const fullContent = await collectFullResponse(client, messages, config, !options.parallel);
+    const fullContent = await collectFullResponse(
+      client, messages, config, !options.parallel, undefined, undefined,
+      grid ? (type, detail) => {
+        if (type === 'thinking') grid.update(index, 'thinking', detail);
+        else if (type === 'tool') grid.update(index, 'tool', detail);
+        else if (type === 'done') grid.update(index, 'done', '');
+      } : undefined
+    );
     _currentPageSlug = null;
 
     if (fullContent) {
       await writeTextFile(pagePath, fullContent);
       _pageContent[slug] = fullContent;
-      if (options.parallel) {
-        logSuccess(`[${index}/${total}] Generated: ${topic.title}`);
-      } else {
-        logSuccess(`Generated: ${topic.title}`);
+      if (!grid) {
+        if (options.parallel) {
+          logSuccess(`[${index}/${total}] Generated: ${topic.title}`);
+        } else {
+          logSuccess(`Generated: ${topic.title}`);
+        }
       }
     } else {
       failed.push(topic);
-      logError(`Failed: ${topic.title}`);
+      if (grid) {
+        grid.update(index, 'failed', '');
+      } else {
+        logError(`Failed: ${topic.title}`);
+      }
     }
   }
 
   if (options.parallel) {
+    if (grid) grid.render();
     const total = pageTopics.length;
     await runConcurrent(
       pageTopics.map((topic, i) => () => generateOne(topic, i + 1, total)),
       options.concurrency
     );
+    if (grid) grid.finish();
   } else {
     const total = pageTopics.length;
     for (let i = 0; i < total; i++) {
