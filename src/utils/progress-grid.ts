@@ -49,8 +49,7 @@ export class ProgressGrid {
     process.stdout.write(`\x1b[${n}A`);
     for (let i = 0; i < n; i++) {
       process.stdout.write('\r\x1b[2K');
-      process.stdout.write(this.formatRow(i));
-      if (i < n - 1) process.stdout.write('\n');
+      console.log(this.formatRow(i));
     }
   }
 
