@@ -221,7 +221,10 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
       }
       const meta2 = JSON.parse(readFileSync(join(latestDir2, '.meta.json'), 'utf-8'));
       if (meta2.gitCommit) {
-        changedFilesInfo = execSync(`git diff ${meta2.gitCommit}..HEAD --name-only`, { encoding: 'utf-8', cwd: wd }).trim();
+        changedFilesInfo = execSync(`git diff ${meta2.gitCommit}..HEAD --name-only`, { encoding: 'utf-8', cwd: wd }).trim()
+          .split('\n')
+          .filter(l => !l.startsWith('.wiki/') && l !== '.wiki')
+          .join('\n');
       }
     } catch { /* ignore */ }
   }
