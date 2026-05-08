@@ -401,6 +401,7 @@ interface UpdatePlan {
   update?: string[];
   add?: Topic[];
   remove?: string[];
+  rename?: { from: string; to: string; title: string }[];
 }
 
 async function updateAnalysis(
@@ -492,6 +493,7 @@ async function updateAnalysis(
             update: parsed.update || [],
             add: parsed.add || [],
             remove: parsed.remove || [],
+            rename: parsed.rename || [],
           };
           logSuccess(`更新分析完成: ${(plan.update || []).length} 个页面需更新, ${(plan.add || []).length} 个需新增, ${(plan.remove || []).length} 个需移除`);
           return plan;
@@ -515,7 +517,7 @@ async function updateAnalysis(
         const parsed = JSON.parse(jsonMatch[0]);
         if (parsed.action === 'restructure') return { action: 'restructure' };
         if (parsed.action === 'update') {
-          return { action: 'update', update: parsed.update || [], add: parsed.add || [], remove: parsed.remove || [] };
+          return { action: 'update', update: parsed.update || [], add: parsed.add || [], remove: parsed.remove || [], rename: parsed.rename || [] };
         }
       } catch { /* ignore */ }
     }
@@ -1066,6 +1068,13 @@ async function resolveAndRunUpdate(
   const removeSet = new Set(updatePlan.remove || []);
   const addTopics = updatePlan.add || [];
   const updateSet = new Set(updatePlan.update || []);
+  const renameList = updatePlan.rename || [];
+
+  // Build rename source set: don't remove these even if they're in removeSet
+  const renameFromSet = new Set(renameList.map(r => r.from));
+  const renameToSet = new Set(renameList.map(r => r.to));
+  // Auto-add rename.from to removeSet so it's excluded from output
+  for (const r of renameList) removeSet.add(r.from);
 
   let finalUpdateSet: Set<string>;
   if (Object.keys(pageDeps).length === 0 && affectedSlugs.length > 0) {
@@ -1074,12 +1083,15 @@ async function resolveAndRunUpdate(
     finalUpdateSet = updateSet;
   }
 
-  logInfo(`Phase 2 Update: 更新 ${finalUpdateSet.size} 个页面, 新增 ${addTopics.length} 个, 移除 ${removeSet.size} 个`);
+  logInfo(`Phase 2 Update: 更新 ${finalUpdateSet.size} 个页面, 新增 ${addTopics.length} 个, 移除 ${removeSet.size} 个${renameList.length > 0 ? `, 重命名 ${renameList.length} 个` : ''}`);
   let copiedCount = 0;
+
+  // ── Copy unchanged pages ──
   for (const topic of oldTopics) {
     if (!topic.slug) continue;
     if (removeSet.has(topic.slug)) continue;
     if (finalUpdateSet.has(topic.slug)) continue;
+    if (renameFromSet.has(topic.slug)) continue;
 
     const oldPath = join(latestDir, `${topic.slug}.md`);
     const newPath = join(TEMP_DIR, `${topic.slug}.md`);
@@ -1090,16 +1102,97 @@ async function resolveAndRunUpdate(
     }
   }
 
-  if (copiedCount > 0) {
-    logInfo(`已复制 ${copiedCount} 个无需更改的页面`);
+  // ── Handle rename: copy old content to new slug ──
+  for (const r of renameList) {
+    const oldPath = join(latestDir, `${r.from}.md`);
+    const newPath = join(TEMP_DIR, `${r.to}.md`);
+    if (!existsSync(oldPath)) {
+      logWarning(`重命名跳过：${r.from}.md 不存在`);
+      continue;
+    }
+    // If also in update set, it will be regenerated — no need to copy
+    if (!finalUpdateSet.has(r.from) && !finalUpdateSet.has(r.to)) {
+      await ensureDir(TEMP_DIR);
+      await copyFile(oldPath, newPath);
+      copiedCount++;
+    }
   }
 
+  // ── Fix cross-references in unchanged pages ──
+  if (renameList.length > 0) {
+    let fixCount = 0;
+    const renameMap = new Map(renameList.map(r => [r.from, r.to] as const));
+    for (const topic of oldTopics) {
+      if (!topic.slug) continue;
+      if (removeSet.has(topic.slug) && !renameFromSet.has(topic.slug)) continue;
+      if (finalUpdateSet.has(topic.slug)) continue;
+      if (renameFromSet.has(topic.slug)) continue;
+      const pagePath = join(TEMP_DIR, `${topic.slug}.md`);
+      if (!existsSync(pagePath)) continue;
+      let content = readFileSync(pagePath, 'utf-8');
+      let changed = false;
+      for (const [from, to] of renameMap) {
+        for (const ref of [`](${from}.md)`, `](${from})`]) {
+          const replacement = ref.endsWith('.md)') ? `](${to}.md)` : `](${to})`;
+          if (content.includes(ref)) {
+            content = content.split(ref).join(replacement);
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(pagePath, content, 'utf-8');
+        fixCount++;
+      }
+    }
+    if (fixCount > 0) logInfo(`已修复 ${fixCount} 个页面的交叉引用`);
+  }
+
+  // ── Build updated topics array with correct section placement ──
+  const addBySection = new Map<string, Topic[]>();
+  for (const t of addTopics) {
+    const sec = t.section || '';
+    if (!addBySection.has(sec)) addBySection.set(sec, []);
+    addBySection.get(sec)!.push(t);
+  }
+
+  // Build rename target topic lookup
+  const renameTargetByFrom = new Map(renameList.map(r => [r.from, r]));
+
   const updatedTopics: Topic[] = [];
+  const addSectionsDone = new Set<string>();
+
   for (const topic of oldTopics) {
-    if (removeSet.has(topic.slug)) continue;
+    if (removeSet.has(topic.slug) && !renameFromSet.has(topic.slug)) continue;
+
+    const sec = topic.section || '';
+
+    // Insert add topics for this section before the first topic of that section
+    if (!addSectionsDone.has(sec) && addBySection.has(sec)) {
+      addSectionsDone.add(sec);
+      for (const add of addBySection.get(sec)!) {
+        updatedTopics.push(add);
+      }
+    }
+
+    // Replace renamed topics with renamed version
+    if (renameFromSet.has(topic.slug)) {
+      const r = renameTargetByFrom.get(topic.slug)!;
+      updatedTopics.push({ ...topic, slug: r.to, title: r.title });
+      continue;
+    }
+
     updatedTopics.push(topic);
   }
-  updatedTopics.push(...addTopics);
+
+  // Remaining add sections (entirely new sections not in old topics) go to end
+  for (const [sec, topics] of addBySection) {
+    if (!addSectionsDone.has(sec)) {
+      if (sec) updatedTopics.push({ title: sec, level: '', slug: '', section: sec, isGroup: true });
+      updatedTopics.push(...topics);
+    }
+  }
 
   return { topics: updatedTopics, updatePlan };
 }
