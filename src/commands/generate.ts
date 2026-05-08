@@ -177,6 +177,22 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
   // No pages to update/add/remove — fast exit, no new version
   if (opts.update && updatePlan && updatePlan.action === 'update' && (updatePlan.update?.length ?? 0) === 0 && (updatePlan.add?.length ?? 0) === 0 && (updatePlan.remove?.length ?? 0) === 0) {
     logSuccess('Wiki 已是最新，无需更新');
+    // Update meta.json in place so status reflects current commit
+    try {
+      const dirs = readdirSync(join(workDir, '.wiki'), { withFileTypes: true })
+        .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
+        .map(e => e.name).sort().reverse();
+      if (dirs.length > 0) {
+        const metaPath = join(workDir, '.wiki', dirs[0], '.meta.json');
+        if (existsSync(metaPath)) {
+          const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+          meta.generatedAt = getTimestamp();
+          try { meta.gitCommit = execSync('git rev-parse HEAD', { encoding: 'utf-8', cwd: workDir }).trim(); } catch { /* ignore */ }
+          try { meta.gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: workDir }).trim(); } catch { /* ignore */ }
+          await writeFile(metaPath, JSON.stringify(meta, null, 2));
+        }
+      }
+    } catch { /* ignore */ }
     await removeDir(TEMP_DIR);
     await runCleanup();
     return;
