@@ -174,6 +174,14 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     logSuccess(`Generated ${topics.length} topics (${pageCount} pages).`);
   }
 
+  // No pages to update/add/remove — fast exit, no new version
+  if (opts.update && updatePlan && updatePlan.action === 'update' && (updatePlan.update?.length ?? 0) === 0 && (updatePlan.add?.length ?? 0) === 0 && (updatePlan.remove?.length ?? 0) === 0) {
+    logSuccess('Wiki 已是最新，无需更新');
+    await removeDir(TEMP_DIR);
+    await runCleanup();
+    return;
+  }
+
   // For --update mode, parallel/concurrency still works but some pages are skipped
   let parallel: boolean;
   let concurrency: number;
