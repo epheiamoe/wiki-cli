@@ -13,7 +13,7 @@ import type { WikiCliConfig } from '../config/config-store.js';
 import { ensureDir, writeTextFile, moveDir, getTimestamp, toSlug, removeDir } from '../utils/file.js';
 import { resolveWorkDir } from '../utils/workspace.js';
 import { ensureGitIgnore } from '../utils/git.js';
-import { getChangedFiles, getAffectedSlugs } from '../utils/diff.js';
+import { getChangedFiles, getAffectedSlugs, isExcludedFile } from '../utils/diff.js';
 import type { PageDeps, ChangedFile } from '../utils/diff.js';
 import { ProgressGrid } from '../utils/progress-grid.js';
 import chalk from 'chalk';
@@ -223,7 +223,7 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
       if (meta2.gitCommit) {
         changedFilesInfo = execSync(`git diff ${meta2.gitCommit}..HEAD --name-only`, { encoding: 'utf-8', cwd: wd }).trim()
           .split('\n')
-          .filter(l => !l.startsWith('.wiki/') && l !== '.wiki')
+          .filter(l => !l.startsWith('.wiki/') && l !== '.wiki' && !isExcludedFile(l))
           .join('\n');
       }
     } catch { /* ignore */ }

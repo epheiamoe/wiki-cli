@@ -20,6 +20,7 @@ export interface WikiCliConfig {
   webFetchBaseUrl?: string;
   webFetchApiKey?: string;
   repoDirs?: string[];
+  excludePatterns?: string[];
 }
 
 export interface ModelEntry {

@@ -1,6 +1,7 @@
 import inquirer from 'inquirer';
 import { loadConfig, saveConfig, loadDefaultModels, getProviders, getModelsByProvider, getConfigPath, supportsJsonMode, getEmbeddingProviders, getEmbeddingModelsByProvider } from '../config/config-store.js';
 import type { WikiCliConfig } from '../config/config-store.js';
+import { DEFAULT_EXCLUDE, loadExcludePatterns } from '../utils/diff.js';
 import { logSuccess, logInfo } from '../utils/progress.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -41,6 +42,7 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
           { name: 'Embedding (semantic search model)', value: 'embedding' },
           { name: 'Web Fetch (let AI read documentation URLs)', value: 'webFetch' },
           { name: 'Repos Directory (where to store cloned repos)', value: 'repos' },
+          { name: 'Exclude Patterns (files excluded from wiki update diff)', value: 'exclude' },
           { name: 'Both', value: 'both' },
           { name: 'Done, quit', value: 'quit' },
         ],
@@ -64,6 +66,10 @@ export async function configCommand(options: Partial<WikiCliConfig & { llmOnly?:
 
   if (mode === 'repos') {
     await configureRepoDirs(fullConfig);
+  }
+
+  if (mode === 'exclude') {
+    await configureExclude(fullConfig);
   }
 
   if (mode === 'both' && !existing) {
@@ -333,5 +339,71 @@ async function configureRepoDirs(config: WikiCliConfig): Promise<void> {
     config.repoDirs = undefined;
   } else {
     config.repoDirs = current;
+  }
+}
+
+async function configureExclude(config: WikiCliConfig): Promise<void> {
+  const current = config.excludePatterns?.length ? config.excludePatterns : [...DEFAULT_EXCLUDE];
+
+  while (true) {
+    const display = current.join(', ') || '(无)';
+    console.log(`\n🔍 排除文件模式（以下文件变更不会触发 Wiki 更新）\n  当前: ${display}\n`);
+    console.log('  文件名以 basename 匹配：README* 匹配 README.md / README.zh.md 等\n');
+
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: '操作：',
+        choices: [
+          { name: '➕ 新增模式', value: 'add' },
+          ...(current.length > 0 ? [{ name: '🗑️ 移除模式', value: 'remove' }] : []),
+          { name: '🔄 重置为默认', value: 'reset' },
+          { name: '✅ 完成', value: 'done' },
+        ],
+      },
+    ]);
+
+    if (action === 'done') break;
+
+    if (action === 'add') {
+      const { pattern } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'pattern',
+          message: '排除模式（如 .md、docs/*、CHANGELOG*）：',
+          validate: (v: string) => v.trim() ? true : '不能为空',
+        },
+      ]);
+      if (pattern.trim() && !current.includes(pattern.trim())) {
+        current.push(pattern.trim());
+      }
+    }
+
+    if (action === 'remove') {
+      const { idx } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'idx',
+          message: '选择要移除的模式：',
+          choices: current.map((p, i) => ({ name: p, value: i })),
+        },
+      ]);
+      current.splice(idx, 1);
+    }
+
+    if (action === 'reset') {
+      current.length = 0;
+      current.push(...DEFAULT_EXCLUDE);
+      logInfo('已重置为默认排除模式');
+    }
+  }
+
+  // Only save if differs from default
+  const isDefault = current.length === DEFAULT_EXCLUDE.length && current.every((p, i) => p === DEFAULT_EXCLUDE[i]);
+  if (isDefault) {
+    config.excludePatterns = undefined;
+  } else {
+    config.excludePatterns = current;
   }
 }

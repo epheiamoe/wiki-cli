@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 export interface ChangedFile {
   path: string;
@@ -14,6 +16,49 @@ export interface PageDeps {
 
 export interface Ranges {
   [filePath: string]: [number, number][];
+}
+
+export const DEFAULT_EXCLUDE = [
+  'README*', 'readme*',
+  'AGENTS.md', 'agents.md',
+  'CONTRIBUTING*',
+  'CHANGELOG*', 'CHANGES*',
+  'LICENSE*',
+  '.gitignore', '.gitattributes', '.editorconfig',
+  '.prettierrc*', '.eslintrc*',
+];
+
+export function loadExcludePatterns(): string[] {
+  try {
+    const cfgPath = join(homedir(), '.wiki-cli', 'config.json');
+    if (existsSync(cfgPath)) {
+      const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
+      if (cfg.excludePatterns?.length) return cfg.excludePatterns;
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_EXCLUDE;
+}
+
+/** Check if a file path matches any exclude pattern (basename matching). */
+function matchesAny(path: string, patterns: string[]): boolean {
+  const normalized = path.replace(/\\/g, '/');
+  const basename = normalized.split('/').pop() || normalized;
+  for (const p of patterns) {
+    if (!p.includes('*')) {
+      if (basename === p || normalized === p) return true;
+      continue;
+    }
+    // wildcard: split on *, check prefix + suffix of basename
+    const parts = p.split('*');
+    const prefix = parts[0];
+    const suffix = parts[parts.length - 1];
+    if (basename.startsWith(prefix) && basename.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
+export function isExcludedFile(filePath: string): boolean {
+  return matchesAny(filePath, loadExcludePatterns());
 }
 
 function parseGitDiff(raw: string): ChangedFile[] {
@@ -36,7 +81,9 @@ export function getChangedFiles(oldCommit: string, cwd: string): ChangedFile[] {
     { encoding: 'utf-8', cwd }
   ).trim();
   if (!raw) return [];
-  return parseGitDiff(raw).filter(f => !f.path.startsWith('.wiki/') && f.path !== '.wiki');
+  return parseGitDiff(raw).filter(f =>
+    !f.path.startsWith('.wiki/') && f.path !== '.wiki' && !isExcludedFile(f.path)
+  );
 }
 
 export function getChangedRanges(oldCommit: string, filePath: string, cwd: string): [number, number][] {
