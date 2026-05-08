@@ -835,6 +835,14 @@ async function generatePages(
 
   if (options.parallel) {
     if (grid) grid.render();
+    // Pre-mark already-generated (copied) pages as done so they don't show ⏳
+    if (!options.retryList && grid) {
+      for (let i = 0; i < pageTopics.length; i++) {
+        if (existsSync(join(TEMP_DIR, `${pageTopics[i].slug}.md`))) {
+          grid.update(i, 'done', '');
+        }
+      }
+    }
     const total = pageTopics.length;
     await runConcurrent(
       pageTopics.map((topic, i) => () => generateOne(topic, i, total)),
@@ -844,7 +852,7 @@ async function generatePages(
   } else {
     const total = pageTopics.length;
     for (let i = 0; i < total; i++) {
-      await generateOne(pageTopics[i], i + 1, total);
+      await generateOne(pageTopics[i], i, total);
     }
   }
 
