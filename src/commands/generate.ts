@@ -253,6 +253,15 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
     } catch { /* ignore */ }
   }
 
+  // Map old content for renamed pages so Phase 2 sees the original text
+  if (updatePlan) {
+    for (const r of updatePlan.rename ?? []) {
+      if (oldContentCache[r.from] && !oldContentCache[r.to]) {
+        oldContentCache[r.to] = oldContentCache[r.from];
+      }
+    }
+  }
+
   const pageGenOptions: PageGenOptions = {
     parallel, concurrency,
     updateMode, oldContentCache, changedFilesInfo,
@@ -1070,11 +1079,12 @@ async function resolveAndRunUpdate(
   const updateSet = new Set(updatePlan.update || []);
   const renameList = updatePlan.rename || [];
 
-  // Build rename source set: don't remove these even if they're in removeSet
+  // rename implies: regenerate new slug + remove old slug
   const renameFromSet = new Set(renameList.map(r => r.from));
-  const renameToSet = new Set(renameList.map(r => r.to));
-  // Auto-add rename.from to removeSet so it's excluded from output
-  for (const r of renameList) removeSet.add(r.from);
+  for (const r of renameList) {
+    removeSet.add(r.from);
+    updateSet.add(r.to);
+  }
 
   let finalUpdateSet: Set<string>;
   if (Object.keys(pageDeps).length === 0 && affectedSlugs.length > 0) {
@@ -1096,22 +1106,6 @@ async function resolveAndRunUpdate(
     const oldPath = join(latestDir, `${topic.slug}.md`);
     const newPath = join(TEMP_DIR, `${topic.slug}.md`);
     if (existsSync(oldPath)) {
-      await ensureDir(TEMP_DIR);
-      await copyFile(oldPath, newPath);
-      copiedCount++;
-    }
-  }
-
-  // ── Handle rename: copy old content to new slug ──
-  for (const r of renameList) {
-    const oldPath = join(latestDir, `${r.from}.md`);
-    const newPath = join(TEMP_DIR, `${r.to}.md`);
-    if (!existsSync(oldPath)) {
-      logWarning(`重命名跳过：${r.from}.md 不存在`);
-      continue;
-    }
-    // If also in update set, it will be regenerated — no need to copy
-    if (!finalUpdateSet.has(r.from) && !finalUpdateSet.has(r.to)) {
       await ensureDir(TEMP_DIR);
       await copyFile(oldPath, newPath);
       copiedCount++;
