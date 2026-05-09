@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { writeFile, readFile, readdir, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative } from 'node:path';
 import inquirer from 'inquirer';
 import { loadConfig } from '../config/config-store.js';
 import { LLMClient, stripCodeFence } from '../ai/llm-client.js';
@@ -718,10 +718,10 @@ async function collectFullResponse(
 
       // Track page dependencies for --update mode
       if (_currentPageSlug && tc.function.name === 'read_file' && args.file_path) {
-        const startLine = args.start_line || 1;
-        const endLine = args.end_line || 999999;
+        const normalizedPath = relative(process.cwd(), resolve(args.file_path)).replace(/\\/g, '/');
+        if (normalizedPath.startsWith('.wiki/') || normalizedPath === '.wiki') continue;
         if (!_pageDeps[_currentPageSlug]) _pageDeps[_currentPageSlug] = [];
-        _pageDeps[_currentPageSlug].push({ file: args.file_path, lines: [startLine, endLine] });
+        _pageDeps[_currentPageSlug].push({ file: normalizedPath, lines: [1, 999999] });
       }
 
       if (stream) logToolCall(tc.function.name, args);
