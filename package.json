@@ -16,6 +16,7 @@
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^12.1.0",
+    "diff": "^9.0.0",
     "highlight.js": "^11.11.0",
     "inquirer": "^12.3.0",
     "marked": "^15.0.4",
@@ -24,6 +25,7 @@
     "ora": "^8.1.1"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

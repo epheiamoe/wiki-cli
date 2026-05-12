@@ -7,6 +7,7 @@ import { statusCommand } from './commands/status.js';
 import { aiCommand } from './commands/ai.js';
 import { cacheCommand } from './commands/cache.js';
 import { toolCallCommand } from './commands/tool-call.js';
+import { refreshCommand } from './commands/refresh.js';
 import { logError } from './utils/progress.js';
 
 const program = new Command();
@@ -164,6 +165,31 @@ program
         listAllSessions: options.all,
         deleteSession: options.deleteSession,
         answerOnly: options.answerOnly,
+      });
+    } catch (err: any) {
+      logError(err.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('refresh')
+  .description('Refresh Wiki page content using AI')
+  .argument('[slug...]', 'Page slug(s) to refresh (default: interactive selection)')
+  .option('-r, --reason <text>', 'Reason for refresh (passed to AI for context)')
+  .option('-y, --yes', 'Non-interactive: apply changes without confirmation')
+  .option('--retry <n>', 'Retry count on failure', '3')
+  .option('-C, --dir <path>', 'Project directory (default: current directory)')
+  .option('-u, --url <url>', 'Git repository URL')
+  .action(async (slugs, options) => {
+    try {
+      await refreshCommand({
+        slugs,
+        reason: options.reason,
+        yes: options.yes,
+        retry: parseInt(options.retry) || 3,
+        dir: options.dir,
+        url: options.url,
       });
     } catch (err: any) {
       logError(err.message);
