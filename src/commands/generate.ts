@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { writeFile, readFile, readdir, copyFile, mkdir } from 'node:fs/promises';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import inquirer from 'inquirer';
 import { loadConfig } from '../config/config-store.js';
@@ -780,6 +780,9 @@ async function generatePages(
 
   const osInfo = `${process.platform} ${process.arch}`;
 
+  // Collect Phase 2 renames from TITLE directives, for cross-ref fix
+  const p2Renames: Array<{ from: string; to: string; title: string }> = [];
+
   async function generateOne(topic: Topic, index: number, total: number): Promise<void> {
     const slug = topic.slug;
     const pagePath = join(TEMP_DIR, `${slug}.md`);
@@ -841,8 +844,36 @@ async function generatePages(
     _currentPageSlug = null;
 
     if (fullContent) {
-      await writeTextFile(pagePath, fullContent);
-      _pageContent[slug] = fullContent;
+      // ── Phase 2 重命名检测 ──
+      const renameMatch = fullContent.match(/^TITLE:\s*(.+)$/m);
+      const writeContent = renameMatch
+        ? fullContent.replace(/^TITLE:\s*.*\n?/m, '').trim()
+        : fullContent;
+      if (renameMatch) {
+        const newTitle = renameMatch[1].trim();
+        const newSlug = toSlug(newTitle);
+        if (newSlug && newSlug !== slug) {
+          const conflictPath = join(TEMP_DIR, `${newSlug}.md`);
+          if (!existsSync(conflictPath)) {
+            logInfo(`[${index + 1}/${total}] Renaming: "${topic.title}" → "${newTitle}"`);
+            p2Renames.push({ from: slug, to: newSlug, title: newTitle });
+            topic.title = newTitle;
+            topic.slug = newSlug;
+            if (_pageDeps[slug]) {
+              _pageDeps[newSlug] = _pageDeps[slug];
+              delete _pageDeps[slug];
+            }
+            await writeTextFile(join(TEMP_DIR, `${newSlug}.md`), writeContent);
+            _pageContent[newSlug] = writeContent;
+            if (grid) grid.update(index, 'done', '');
+            return;
+          } else {
+            logWarning(`[${index + 1}/${total}] 重命名冲突 "${newSlug}"，保留原始标题`);
+          }
+        }
+      }
+      await writeTextFile(pagePath, writeContent);
+      _pageContent[slug] = writeContent;
       if (!grid) {
         if (options.parallel) {
           logSuccess(`[${index + 1}/${total}] Generated: ${topic.title}`);
@@ -881,6 +912,32 @@ async function generatePages(
     for (let i = 0; i < total; i++) {
       await generateOne(pageTopics[i], i, total);
     }
+  }
+
+  // ── Phase 2 交叉引用修复 ──
+  if (p2Renames.length > 0 && !options.retryList) {
+    let fixCount = 0;
+    const files = readdirSync(TEMP_DIR);
+    for (const file of files) {
+      if (!file.endsWith('.md')) continue;
+      const pagePath = join(TEMP_DIR, file);
+      let content = readFileSync(pagePath, 'utf-8');
+      let changed = false;
+      for (const r of p2Renames) {
+        for (const ref of [`](${r.from}.md)`, `](${r.from})`]) {
+          const replacement = ref.endsWith('.md)') ? `](${r.to}.md)` : `](${r.to})`;
+          if (content.includes(ref)) {
+            content = content.split(ref).join(replacement);
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        writeFileSync(pagePath, content, 'utf-8');
+        fixCount++;
+      }
+    }
+    if (fixCount > 0) logInfo(`已修复 ${fixCount} 个页面的交叉引用（Phase 2 重命名）`);
   }
 
   return failed;
