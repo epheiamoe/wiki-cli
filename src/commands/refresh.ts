@@ -12,7 +12,7 @@ import { initTools, getFilteredTools, executeToolCall, setRemoteFallback } from 
 import type { WikiCliConfig } from '../config/config-store.js';
 import { toSlug, writeTextFile, getTimestamp } from '../utils/file.js';
 import { findExistingRepoDir, defaultRepoDir } from '../utils/workspace.js';
-import { logInfo, logSuccess, logWarning, logError } from '../utils/progress.js';
+import { logInfo, logSuccess, logWarning, logError, logToolCall, logToolResult } from '../utils/progress.js';
 import { formatTerminalDiff } from '../utils/terminal-diff.js';
 
 export interface RefreshOptions {
@@ -435,18 +435,45 @@ async function collectFullRefresh(
     iteration++;
     let hasToolCalls = false;
     let currentContent = '';
+    let currentReasoning = '';
+    let reasoningStarted = false;
+    let contentStarted = false;
     const toolCallsMap = new Map<string, any>();
 
-    const response = await client.chat(messages, getFilteredTools());
+    const streamIter = client.chatStream(messages, getFilteredTools());
 
-    currentContent = response.content || '';
-
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      hasToolCalls = true;
-      for (const tc of response.tool_calls) {
-        const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
-        toolCallsMap.set(key, { ...tc });
+    try {
+      for await (const chunk of streamIter) {
+        if (chunk.type === 'reasoning' && chunk.reasoning_content) {
+          currentReasoning += chunk.reasoning_content;
+          if (!reasoningStarted) {
+            reasoningStarted = true;
+            process.stdout.write(chalk.dim.yellow('\nThinking: '));
+          }
+          process.stdout.write(chalk.dim.yellow(chunk.reasoning_content));
+        } else if (chunk.type === 'content') {
+          if (!contentStarted && reasoningStarted) {
+            contentStarted = true;
+            console.log('');
+          }
+          currentContent += chunk.content ?? '';
+          process.stdout.write(chunk.content ?? '');
+        } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+          hasToolCalls = true;
+          const tc = chunk.tool_call;
+          const key = tc.index !== undefined ? `_idx_${tc.index}` : tc.id;
+          if (toolCallsMap.has(key)) {
+            const existing = toolCallsMap.get(key)!;
+            existing.function.arguments += tc.function.arguments;
+          } else {
+            toolCallsMap.set(key, { ...tc });
+          }
+        } else if (chunk.type === 'error') {
+          throw new Error(chunk.error || 'LLM stream error');
+        }
       }
+    } catch (err: any) {
+      throw new Error(`Stream error: ${err.message}`);
     }
 
     if (currentContent) {
@@ -454,7 +481,12 @@ async function collectFullRefresh(
     }
 
     if (!hasToolCalls) {
-      messages.push({ role: 'assistant', content: currentContent || null });
+      messages.push({
+        role: 'assistant',
+        content: currentContent || null,
+        reasoning_content: currentReasoning || null,
+      });
+      console.log();
       return currentContent;
     }
 
@@ -462,13 +494,18 @@ async function collectFullRefresh(
     messages.push({
       role: 'assistant',
       content: currentContent || null,
-      tool_calls: toolCalls.map((tc: any) => ({ id: tc.id, type: 'function', function: tc.function })),
+      reasoning_content: currentReasoning || null,
+      tool_calls: toolCalls.map((tc: any) => ({ id: tc.id, type: 'function' as const, function: tc.function })),
     });
+
+    console.log();
 
     for (const tc of toolCalls) {
       let args: any;
       try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+      logToolCall(tc.function.name, args);
       const result = await executeToolCall(tc.function.name, args);
+      logToolResult(tc.function.name, result);
       messages.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) });
     }
   }
