@@ -10,6 +10,7 @@ interface Row {
 export class ProgressGrid {
   private rows: Row[];
   private rendered = false;
+  private redrawPending = false;
 
   constructor(titles: string[]) {
     this.rows = titles.map(t => ({ status: 'waiting' as const, title: t, detail: '', toolCount: 0 }));
@@ -28,12 +29,13 @@ export class ProgressGrid {
     if (status === 'tool' || status === 'thinking') {
       this.rows[index].toolCount++;
     }
-    this.redraw();
+    this.scheduleRedraw();
   }
 
   finish(): void {
     if (!this.rendered) return;
     this.rendered = false;
+    this.redrawPending = false;
     const n = this.rows.length;
     process.stdout.write(`\x1b[${n}A`);
     for (let i = 0; i < n; i++) {
@@ -43,7 +45,17 @@ export class ProgressGrid {
     process.stdout.write(`\x1b[${n - 1}A`);
   }
 
-  private redraw(): void {
+  private scheduleRedraw(): void {
+    // Debounce: coalesce rapid concurrent updates into a single redraw
+    if (this.redrawPending) return;
+    this.redrawPending = true;
+    setImmediate(() => {
+      this.redrawPending = false;
+      this.doRedraw();
+    });
+  }
+
+  private doRedraw(): void {
     if (!this.rendered) return;
     const n = this.rows.length;
     process.stdout.write(`\x1b[${n}A`);
@@ -68,7 +80,6 @@ export class ProgressGrid {
       case 'failed': icon = '✖'; break;
     }
 
-    // Truncate detail to fit terminal width
     const prefix = ` ${icon} ${idx} ${this.colorize(row.status, row.title)}`;
     let suffix = '';
     if (row.status === 'waiting') suffix = chalk.dim(' 等待中');
