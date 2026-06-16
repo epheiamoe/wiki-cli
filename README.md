@@ -78,7 +78,12 @@ wiki-cli generate --parallel -c 5
 
 # 静默模式 + 全自动
 wiki-cli generate --silent --parallel --browse
+
+# 强制重新生成（即使 Wiki 已是最新）
+wiki-cli generate --force
 ```
+
+> 当已有 Wiki 的 commit 与当前 Git HEAD 一致时，`generate` 会询问是否仍要重新生成；加 `--force` 可跳过确认。
 
 **两阶段流程：**
 

@@ -49,8 +49,51 @@ export interface GenerateOptions {
   concurrency?: number;
   retry?: number;
   silent?: boolean;
+  force?: boolean;
   browse?: boolean;
   update?: boolean;
+}
+
+function findLatestWikiVersion(workDir: string): string | null {
+  const wikiDir = join(workDir, '.wiki');
+  if (!existsSync(wikiDir)) return null;
+  const dirs = readdirSync(wikiDir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
+    .map(e => e.name)
+    .sort()
+    .reverse();
+  return dirs[0] ? join(wikiDir, dirs[0]) : null;
+}
+
+function getWikiUpToDateInfo(workDir: string): {
+  upToDate: boolean;
+  versionDir: string | null;
+  metaCommit: string | null;
+  currentCommit: string | null;
+} {
+  const versionDir = findLatestWikiVersion(workDir);
+  if (!versionDir) {
+    return { upToDate: false, versionDir: null, metaCommit: null, currentCommit: null };
+  }
+  const metaPath = join(versionDir, '.meta.json');
+  if (!existsSync(metaPath)) {
+    return { upToDate: false, versionDir, metaCommit: null, currentCommit: null };
+  }
+  let metaCommit: string | null = null;
+  let currentCommit: string | null = null;
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    metaCommit = meta.gitCommit || null;
+  } catch { /* ignore */ }
+  try {
+    currentCommit = execSync('git rev-parse HEAD', { encoding: 'utf-8', cwd: workDir }).trim();
+  } catch { /* not a git repo */ }
+  return {
+    upToDate: !!(metaCommit && currentCommit && metaCommit === currentCommit),
+    versionDir,
+    metaCommit,
+    currentCommit,
+  };
 }
 
 export async function generateCommand(opts: GenerateOptions = {}): Promise<void> {
@@ -87,17 +130,35 @@ export async function generateCommand(opts: GenerateOptions = {}): Promise<void>
 
   ensureGitIgnore(workDir);
 
-  // Repo not updated (network fallback) and wiki already exists → ask user
-  if (updated === false) {
-    const wikiDirForCheck = join(workDir, '.wiki');
-    if (existsSync(wikiDirForCheck)) {
-      const dirs = readdirSync(wikiDirForCheck, { withFileTypes: true })
-        .filter(e => e.isDirectory() && e.name !== 'temp' && e.name !== 'sessions')
-        .map(e => e.name)
-        .sort()
-        .reverse();
-      if (dirs.length > 0) {
-        const existingPath = join(wikiDirForCheck, dirs[0]);
+  // Check if Wiki is already up-to-date with current git HEAD
+  if (!opts.update) {
+    const upToDateInfo = getWikiUpToDateInfo(workDir);
+    if (upToDateInfo.upToDate && upToDateInfo.versionDir) {
+      if (opts.force) {
+        logInfo('Wiki 已是最新，--force 强制重新生成');
+      } else if (opts.silent) {
+        logInfo(`Wiki 已是最新: ${upToDateInfo.versionDir}`);
+        return;
+      } else {
+        const { regen } = await inquirer.prompt([
+          { type: 'confirm', name: 'regen', message: 'Wiki 已是最新，是否仍要重新生成？', default: false },
+        ]);
+        if (!regen) {
+          logInfo('跳过生成。');
+          const { open } = await inquirer.prompt([
+            { type: 'confirm', name: 'open', message: '打开已有 Wiki 文档？', default: true },
+          ]);
+          if (open) {
+            const { browseCommand } = await import('./browse.js');
+            await browseCommand({ path: upToDateInfo.versionDir });
+          }
+          return;
+        }
+      }
+    } else if (updated === false) {
+      // Repo not updated (network fallback) and wiki already exists → ask user
+      const existingPath = findLatestWikiVersion(workDir);
+      if (existingPath) {
         if (opts.silent) {
           logWarning(`仓库未更新，使用已有 Wiki: ${existingPath}`);
           return;
